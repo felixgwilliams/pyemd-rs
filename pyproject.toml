@@ -1,0 +1,46 @@
+[build-system]
+requires = ["maturin>=1.8,<2.0", "numpy>=2"]
+build-backend = "maturin"
+
+[project]
+name = "pyemd-rs"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dynamic = ["version"]
+dependencies = [
+    "numpy>1.24",
+]
+[tool.maturin]
+features = ["pyo3/extension-module"]
+python-source = "python"
+module-name = "pyemd_rs._pyemd_rs"
+
+[dependency-groups]
+dev = [
+    "ipython>=8.18.1",
+    "maturin>=1.8.3",
+    "ruff>=0.11.4",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+exclude = ["archive/*"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["COM", "ERA", "ISC001", "PTH", "TRY003", "TD", "FIX", "PYI021"]
+
+[tool.ruff.lint.per-file-ignores]
+"!python/**" = ["ANN", "D",  "PLR2004", "T20", "EM", "PLR0913", "FBT003", "INP001"]
+"tests/**.py" = ["S101"]
+
+[tool.ruff.lint.isort]
+required-imports = ["from __future__ import annotations"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
