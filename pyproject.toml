@@ -21,13 +21,15 @@ module-name = "pyemd_rs._pyemd_rs"
 
 [dependency-groups]
 dev = [
+    "emd-signal>=1.6.4",
     "ipython>=8.18.1",
     "maturin>=1.8.3",
+    "pytest>=8.3.5",
     "ruff>=0.11.4",
 ]
 
 [tool.ruff]
-line-length = 120
+line-length = 100
 target-version = "py310"
 exclude = ["archive/*"]
 

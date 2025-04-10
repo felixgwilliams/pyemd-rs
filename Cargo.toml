@@ -9,5 +9,6 @@ name = "pyemd_rs"
 crate-type = ["cdylib"]
 
 [dependencies]
+anyhow = "1.0.97"
 numpy = "0.24"
-pyo3 = "0.24"
+pyo3 = { version = "0.24", features = ["anyhow"] }
