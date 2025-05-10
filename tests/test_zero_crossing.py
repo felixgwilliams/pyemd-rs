@@ -24,6 +24,12 @@ zc_arrays = {
     "nz": np.array([-1, 0], dtype=np.float64),
     "np": np.array([-1, 1], dtype=np.float64),
     "nn": np.array([-1, -1], dtype=np.float64),
+    "d2zero": np.array([2, 3, 3, 2, 4], dtype=np.float64),
+    "d2zero2": np.array([2, 3, 3, 3, 3, 2, 4], dtype=np.float64),
+    "d2zero3": np.array([2, 3, 3, 4, 2], dtype=np.float64),
+    "d2zero4": np.array([2, 3, 3, 3, 3, 4, 2], dtype=np.float64),
+    "repeats2": np.array([1, 2, 3, 3, 2, 2, 4], dtype=np.float64),
+    "repeats3": np.array([1, 2, 3, 3, 3, 2, 2, 2, 4], dtype=np.float64),
     "original": np.array([-1, 0, 1, 0, -1, 0, 3, 0, -9, 0], dtype=np.float64),
     "repeats": np.array([-1, 0, 1, 1, 0, -1, 0, 3, 0, -9, 0], dtype=np.float64),
     "bound_extrapolation1": np.array(
@@ -34,8 +40,39 @@ zc_arrays = {
     ),
     "bound_extrapolation3": np.array([1, 4, 3, 2, -2, 0, 1, 2, 1, 0, 1, 2, 5, 4], dtype=np.float64),
     "bound_extrapolation4": np.array([4, 3, 2, -2, 0, 1, 2, 1, 0, 1, 2, 5], dtype=np.float64),
+    "oscillate": np.array([1, 0, -1, 0, 1, 0, -1, 0, 1], dtype=np.float64),
+    "test": np.array([2, 1, 2, 3, 2, 3, 2, 3, 2, 2], dtype=np.float64),
+    "mirror_mr1": np.array(
+        [81, 89, 63, 96, 64, 13, 52, 54, 18, 11, 71, 88, 61, 78, 2, 90, 76, 64, 54, 23],
+        dtype=np.float64,
+    ),
+    "mirror_ml1": np.array(
+        [26, 66, 84, 92, 93, 11, 44, 17, 40, 7, 95, 25, 98, 13, 40, 78, 87, 78, 18, 40],
+        dtype=np.float64,
+    ),
+    "mirror_mr2": np.array(
+        [52, 20, 75, 56, 65, 65, 37, 79, 73, 66, 9, 48, 57, 44, 75, 3, 34, 36, 38, 73],
+        dtype=np.float64,
+    ),
+    "mirror_ml2": np.array(
+        [81, 78, 69, 65, 59, 21, 99, 88, 2, 98, 56, 77, 84, 28, 11, 52, 55, 27, 46, 11],
+        dtype=np.float64,
+    ),
+    "unmatched": np.array(
+        [-34, -34, 15, -33, 34, -29, 44, 0, -9, 1, 37, 44, 3, -48, -16, 25, -45, 12, 40, -9],
+        dtype=np.float64,
+    ),
+    "unmatched2": np.array(
+        [45, 26, -26, -22, -21, 48, 48, -35, -35, 12, 8, -49, -20, 43, -6, 9, 20, -29, 4, -36],
+        dtype=np.float64,
+    ),
+    "level_ind_1": np.array(
+        [35, 32, 32, -32, -32, -10, 7, -37, 46, -17, -38, 2, 31, -37, 12, 24, -40, -34, 6, 43],
+        dtype=np.float64,
+    ),
 }
 long_zc = {k: v for k, v in zc_arrays.items() if len(v) >= 6}
+FindExtremaOutput2 = tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
 
 
 def prepare_points_simple_orig(  # noqa: C901, PLR0912, PLR0915
@@ -181,14 +218,92 @@ def prepare_points_simple_orig(  # noqa: C901, PLR0912, PLR0915
     return max_extrema, min_extrema
 
 
+def find_extrema_simple_orig(T: np.ndarray, S: np.ndarray) -> FindExtremaOutput2:  # noqa: C901, N803, PLR0912, PLR0915
+    """
+    Performs extrema detection, where extremum is defined as a point,
+    that is above/below its neighbours.
+
+    See :meth:`EMD.find_extrema`.
+    """
+
+    # Finds indexes of zero-crossings
+    S1, S2 = S[:-1], S[1:]  # noqa: N806
+    indzer = np.nonzero(S1 * S2 < 0)[0]
+    if np.any(S == 0):
+        indz = np.nonzero(S == 0)[0]
+        if np.any(np.diff(indz) == 1):
+            zer = S == 0
+            dz = np.diff(np.append(np.append(0, zer), 0))
+            debz = np.nonzero(dz == 1)[0]
+            finz = np.nonzero(dz == -1)[0] - 1
+            indz = np.round((debz + finz) / 2.0)
+
+        indzer = np.sort(np.append(indzer, indz))
+
+    # Finds local extrema
+    d = np.diff(S)
+    d1, d2 = d[:-1], d[1:]
+    indmin = np.nonzero(np.r_[d1 * d2 < 0] & np.r_[d1 < 0])[0] + 1
+    indmax = np.nonzero(np.r_[d1 * d2 < 0] & np.r_[d1 > 0])[0] + 1
+
+    # When two or more points have the same value
+    if np.any(d == 0):
+        imax, imin = [], []
+
+        bad = d == 0
+        dd = np.diff(np.append(np.append(0, bad), 0))
+        debs = np.nonzero(dd == 1)[0]
+        fins = np.nonzero(dd == -1)[0]
+        if debs[0] == 1:
+            if len(debs) > 1:
+                debs, fins = debs[1:], fins[1:]
+            else:
+                debs, fins = [], []
+
+        if len(debs) > 0:  # noqa: SIM102
+            if fins[-1] == len(S) - 1:
+                if len(debs) > 1:
+                    debs, fins = debs[:-1], fins[:-1]
+                else:
+                    debs, fins = [], []
+
+        lc = len(debs)
+        if lc > 0:
+            for k in range(lc):
+                if d[debs[k] - 1] > 0:
+                    if d[fins[k]] < 0:
+                        imax.append(np.round((fins[k] + debs[k]) / 2.0))
+                elif d[fins[k]] > 0:
+                    imin.append(np.round((fins[k] + debs[k]) / 2.0))
+
+        if len(imax) > 0:
+            indmax = indmax.tolist()
+            for x in imax:
+                indmax.append(int(x))
+            indmax.sort()
+
+        if len(imin) > 0:
+            indmin = indmin.tolist()
+            for x in imin:
+                indmin.append(int(x))
+            indmin.sort()
+
+    local_max_pos = T[indmax]
+    local_max_val = S[indmax]
+    local_min_pos = T[indmin]
+    local_min_val = S[indmin]
+
+    return local_max_pos, local_max_val, local_min_pos, local_min_val, indzer
+
+
 @pytest.mark.parametrize("arr_id", zc_arrays.items(), ids=zc_arrays.keys())
 def test_find_extrema(arr_id):
     id_, arr = arr_id
-    maxpos, _, minpos, _, zc = EMD._find_extrema_simple(np.arange(len(arr)), arr)  # noqa: SLF001
+    maxpos, _, minpos, _, zc = find_extrema_simple_orig(np.arange(len(arr)), arr)
     feo = find_extrema_simple(arr)
-    assert np.allclose(feo.max_pos, maxpos)
-    assert np.allclose(feo.min_pos, minpos)
-    assert np.allclose(feo.zc_ind, zc)
+    assert np.array_equal(feo.max_pos, maxpos)
+    assert np.array_equal(feo.min_pos, minpos)
+    assert np.array_equal(feo.zc_ind, zc)
 
 
 @pytest.mark.parametrize("arr_id", long_zc.items(), ids=long_zc.keys())
@@ -214,3 +329,21 @@ def test_prepare_points(arr_id):
     assert np.array_equal(min_extrema[1, :], zmin)
 
     print(tmin, zmin, tmax, zmax)
+
+
+def test_prepare_points2():
+    # pytest.skip("Use to generate test examples")
+    gen = np.random.default_rng(12313)
+    for _i in range(10000):
+        arr = np.round(gen.random(size=20) * 100) - 50
+        pos = np.arange(len(arr))
+        maxpos, maxval, minpos, minval, zc = find_extrema_simple_orig(pos, arr)
+        feo = find_extrema_simple(arr)
+        assert np.array_equal(feo.max_pos, maxpos)
+        assert np.array_equal(feo.min_pos, minpos)
+        assert np.array_equal(feo.zc_ind, zc)
+        if len(maxpos) + len(minpos) < 3:
+            continue
+        max_extrema, min_extrema = prepare_points_simple_orig(
+            2, pos, arr, maxpos, None, minpos, None
+        )

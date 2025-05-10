@@ -1,3 +1,5 @@
+use std::collections::BinaryHeap;
+
 use numpy::{ndarray::prelude::*, PyArray1, PyReadonlyArray1};
 use pyo3::prelude::*;
 
@@ -93,7 +95,7 @@ fn find_zero_crossing_impl(val: &[f64]) -> Vec<usize> {
     out
 }
 
-fn find_extrema_pos_impl(val: &[f64]) -> (Vec<usize>, Vec<usize>) {
+fn find_extrema_pos_impl_old(val: &[f64]) -> (Vec<usize>, Vec<usize>) {
     let n = val.len();
     if n < 2 {
         return (vec![], vec![]);
@@ -105,20 +107,20 @@ fn find_extrema_pos_impl(val: &[f64]) -> (Vec<usize>, Vec<usize>) {
     // for i in 0..n - 1 {
     //     d.push(val[i + 1] - val[i]);
     // }
+    dbg!(val);
     for i in 0..n - 2 {
         let d1 = val[i + 2] - val[i + 1];
         let d2 = val[i + 1] - val[i]; // d[i]
+                                      // dbg!(d1);
+                                      // dbg!(d2);
         if d1 == 0.0 {
             debs.get_or_insert((i + 1, d2));
         } else if d2 == 0.0 {
+            if i == 0 {
+                debs.get_or_insert((i, 0.0));
+            }
         } else {
-            if let Some((debs_inner, slope)) = debs {
-                if slope > 0.0 && d2 < 0.0 {
-                    maxout.push(midpoint(i, debs_inner));
-                } else if slope < 0.0 && d2 > 0.0 {
-                    minout.push(midpoint(i, debs_inner));
-                }
-            } else if d1.signum() != d2.signum() {
+            if d1.signum() != d2.signum() {
                 if d2 < 0.0 {
                     minout.push(i + 1);
                 }
@@ -126,9 +128,48 @@ fn find_extrema_pos_impl(val: &[f64]) -> (Vec<usize>, Vec<usize>) {
                     maxout.push(i + 1);
                 }
             }
+            match debs {
+                None | Some((1, _)) => {
+                    // dbg!(debs);
+                }
+                Some((0, _)) => {
+                    // this could be a bug
+                    let slope = val[n - 1] - val[n - 2];
+                    if slope > 0.0 && d2 < 0.0 {
+                        maxout.push(midpoint(i, 0));
+                    } else if slope < 0.0 && d2 > 0.0 {
+                        minout.push(midpoint(i, 0));
+                    }
+                }
+                Some((debs_inner, slope)) => {
+                    dbg!((debs, i, slope, d2));
+                    if slope > 0.0 && d2 < 0.0 {
+                        maxout.push(midpoint(i, debs_inner));
+                    } else if slope < 0.0 && d2 > 0.0 {
+                        minout.push(midpoint(i, debs_inner));
+                    }
+                }
+            }
+
+            // if let Some((debs_inner, slope)) = debs {
+            //     dbg!((debs_inner, slope, d2, i));
+            //     if slope > 0.0 && d2 < 0.0 {
+            //         maxout.push(midpoint(i, debs_inner));
+            //     } else if slope < 0.0 && d2 > 0.0 {
+            //         minout.push(midpoint(i, debs_inner));
+            //     }
+            // } else if d1.signum() != d2.signum() {
+            //     if d2 < 0.0 {
+            //         minout.push(i + 1);
+            //     }
+            //     if d2 > 0.0 {
+            //         maxout.push(i + 1);
+            //     }
+            // }
             debs = None;
         }
     }
+    dbg!(&debs);
     if let Some((debs_inner, slope)) = debs {
         if slope > 0.0 && val[n - 1] < val[n - 2] {
             maxout.push(midpoint(n - 2, debs_inner));
@@ -137,6 +178,74 @@ fn find_extrema_pos_impl(val: &[f64]) -> (Vec<usize>, Vec<usize>) {
         }
     }
     (minout, maxout)
+}
+fn find_extrema_pos_impl(val: &[f64]) -> (Vec<usize>, Vec<usize>) {
+    let n = val.len();
+    if n < 2 {
+        return (vec![], vec![]);
+    }
+    let mut minout = Vec::new();
+    let mut maxout = Vec::new();
+    let mut level = Vec::new();
+    let mut level_ends = Vec::new();
+    let mut cur_level = None;
+
+    if val[1] == val[0] {
+        level.push(0);
+        cur_level = Some(0);
+    }
+    for i in 0..n - 2 {
+        let d1 = val[i + 2] - val[i + 1];
+        let d2 = val[i + 1] - val[i];
+        if d1 == 0.0 {
+            if cur_level.is_none() {
+                level.push(i + 1);
+                cur_level.get_or_insert(i + 1);
+            }
+        } else {
+            if cur_level.is_some() {
+                level_ends.push(i + 1);
+                cur_level = None;
+            }
+
+            if d2 != 0.0 && d1.signum() != d2.signum() {
+                if d2 < 0.0 {
+                    minout.push(i + 1);
+                }
+                if d2 > 0.0 {
+                    maxout.push(i + 1);
+                }
+            }
+        }
+    }
+    if cur_level.is_some() {
+        level.pop();
+        // level_ends.push(n - 1);
+    }
+    dbg!((&level, &level_ends, &cur_level,));
+    assert!(level.len() == level_ends.len());
+    if level.is_empty() {
+        return (minout, maxout);
+    }
+    let mut minout = BinaryHeap::from(minout);
+    let mut maxout = BinaryHeap::from(maxout);
+    for (start, end) in level.iter().copied().zip(level_ends) {
+        if start == 1 {
+            continue;
+        }
+        let in_slope = if start == 0 {
+            val[n - 1] - val[n - 2]
+        } else {
+            val[start] - val[start - 1]
+        };
+        let out_slope = val[end + 1] - val[end - 1];
+        if in_slope > 0.0 && out_slope < 0.0 {
+            maxout.push(midpoint(start, end));
+        } else if in_slope < 0.0 && out_slope > 0.0 {
+            minout.push(midpoint(start, end))
+        }
+    }
+    (minout.into_sorted_vec(), maxout.into_sorted_vec())
 }
 
 #[pyfunction]
@@ -601,6 +710,13 @@ mod test {
         assert_eq!(
             find_extrema_pos_impl(&[-1., 0., 1., 1., 0., -1., 0., 3., 0., -9., 0.]),
             (vec![5, 9], vec![2, 7])
+        );
+        assert_eq!(
+            find_extrema_pos_impl(&[
+                52., 20., 75., 56., 65., 65., 37., 79., 73., 66., 9., 48., 57., 44., 75., 3., 34.,
+                36., 38., 73.
+            ]),
+            (vec![1, 3, 6, 10, 13, 15], vec![2, 4, 7, 12, 14])
         )
     }
 }
