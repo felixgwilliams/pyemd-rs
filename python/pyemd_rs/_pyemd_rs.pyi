@@ -17,8 +17,20 @@ class FindExtremaOutput:
     max_val: npt.NDArray[np.float64]
     min_pos: npt.NDArray[np.float64]
     min_val: npt.NDArray[np.float64]
-    zc_ind: npt.NDArray[np.intp]
+    zc_ind: npt.NDArray[np.uintp]
 
-def find_extrema_simple(
-    pos: npt.NDArray[np.float64], val: npt.NDArray[np.float64]
-) -> FindExtremaOutput: ...
+def find_extrema_simple(val: npt.NDArray[np.float64]) -> FindExtremaOutput: ...
+def prepare_points_simple(
+    val: npt.NDArray[np.float64],
+    min_pos: npt.NDArray[np.uintp],
+    max_pos: npt.NDArray[np.uintp],
+    nsymb: int,
+) -> tuple[
+    npt.NDArray[np.uintp],
+    npt.NDArray[np.float64],
+    npt.NDArray[np.uintp],
+    npt.NDArray[np.float64],
+]: ...
+def find_extrema_simple_pos(
+    val: npt.NDArray[np.float64],
+) -> tuple[npt.NDArray[np.uintp], npt.NDArray[np.uintp]]: ...
