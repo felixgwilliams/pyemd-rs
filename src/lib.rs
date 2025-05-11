@@ -1,6 +1,7 @@
-use std::collections::BinaryHeap;
+use std::{borrow::Cow, collections::BinaryHeap};
 
-use numpy::{ndarray::prelude::*, PyArray1, PyReadonlyArray1};
+use ndarray_linalg::{SolveTridiagonal, Tridiagonal};
+use numpy::{ndarray::prelude::*, PyArray1, PyReadonlyArray1, ToPyArray};
 use pyo3::prelude::*;
 
 /// Formats the sum of two numbers as string.
@@ -95,90 +96,6 @@ fn find_zero_crossing_impl(val: &[f64]) -> Vec<usize> {
     out
 }
 
-fn find_extrema_pos_impl_old(val: &[f64]) -> (Vec<usize>, Vec<usize>) {
-    let n = val.len();
-    if n < 2 {
-        return (vec![], vec![]);
-    }
-    let mut debs = None;
-    let mut minout = Vec::new();
-    let mut maxout = Vec::new();
-    // let mut d = Vec::with_capacity(n - 1);
-    // for i in 0..n - 1 {
-    //     d.push(val[i + 1] - val[i]);
-    // }
-    dbg!(val);
-    for i in 0..n - 2 {
-        let d1 = val[i + 2] - val[i + 1];
-        let d2 = val[i + 1] - val[i]; // d[i]
-                                      // dbg!(d1);
-                                      // dbg!(d2);
-        if d1 == 0.0 {
-            debs.get_or_insert((i + 1, d2));
-        } else if d2 == 0.0 {
-            if i == 0 {
-                debs.get_or_insert((i, 0.0));
-            }
-        } else {
-            if d1.signum() != d2.signum() {
-                if d2 < 0.0 {
-                    minout.push(i + 1);
-                }
-                if d2 > 0.0 {
-                    maxout.push(i + 1);
-                }
-            }
-            match debs {
-                None | Some((1, _)) => {
-                    // dbg!(debs);
-                }
-                Some((0, _)) => {
-                    // this could be a bug
-                    let slope = val[n - 1] - val[n - 2];
-                    if slope > 0.0 && d2 < 0.0 {
-                        maxout.push(midpoint(i, 0));
-                    } else if slope < 0.0 && d2 > 0.0 {
-                        minout.push(midpoint(i, 0));
-                    }
-                }
-                Some((debs_inner, slope)) => {
-                    dbg!((debs, i, slope, d2));
-                    if slope > 0.0 && d2 < 0.0 {
-                        maxout.push(midpoint(i, debs_inner));
-                    } else if slope < 0.0 && d2 > 0.0 {
-                        minout.push(midpoint(i, debs_inner));
-                    }
-                }
-            }
-
-            // if let Some((debs_inner, slope)) = debs {
-            //     dbg!((debs_inner, slope, d2, i));
-            //     if slope > 0.0 && d2 < 0.0 {
-            //         maxout.push(midpoint(i, debs_inner));
-            //     } else if slope < 0.0 && d2 > 0.0 {
-            //         minout.push(midpoint(i, debs_inner));
-            //     }
-            // } else if d1.signum() != d2.signum() {
-            //     if d2 < 0.0 {
-            //         minout.push(i + 1);
-            //     }
-            //     if d2 > 0.0 {
-            //         maxout.push(i + 1);
-            //     }
-            // }
-            debs = None;
-        }
-    }
-    dbg!(&debs);
-    if let Some((debs_inner, slope)) = debs {
-        if slope > 0.0 && val[n - 1] < val[n - 2] {
-            maxout.push(midpoint(n - 2, debs_inner));
-        } else if slope < 0.0 && val[n - 1] > val[n - 2] {
-            minout.push(midpoint(n - 2, debs_inner));
-        }
-    }
-    (minout, maxout)
-}
 fn find_extrema_pos_impl(val: &[f64]) -> (Vec<usize>, Vec<usize>) {
     let n = val.len();
     if n < 2 {
@@ -218,15 +135,19 @@ fn find_extrema_pos_impl(val: &[f64]) -> (Vec<usize>, Vec<usize>) {
             }
         }
     }
+    // if we are in a "level" run at the end, we remove the entry
     if cur_level.is_some() {
         level.pop();
         // level_ends.push(n - 1);
     }
-    dbg!((&level, &level_ends, &cur_level,));
+    // dbg!((&level, &level_ends, &cur_level,));
     assert!(level.len() == level_ends.len());
+    // if there are no duplicates, we can return
     if level.is_empty() {
         return (minout, maxout);
     }
+    // We need to do a second pass
+    // It may be faster to append to the vectors then sort again. We can test this later!
     let mut minout = BinaryHeap::from(minout);
     let mut maxout = BinaryHeap::from(maxout);
     for (start, end) in level.iter().copied().zip(level_ends) {
@@ -619,6 +540,179 @@ fn prepare_points_simple<'py>(
     ))
 }
 
+fn get_cow_slice<'a, T>(x: &'a ArrayView1<T>) -> Cow<'a, [T]>
+where
+    T: Clone,
+    [T]: ToOwned<Owned = Vec<T>>,
+{
+    match x.as_slice() {
+        Some(s) => Cow::Borrowed(s),
+        None => Cow::Owned(x.to_vec()),
+    }
+}
+fn cubic_spline_3pts(
+    x: ArrayView1<f64>,
+    y: ArrayView1<f64>,
+    t: Array1<isize>,
+) -> (Array1<isize>, Array1<f64>) {
+    let dx1 = x[1] - x[0];
+    let dx2 = x[2] - x[1];
+    let rdx1 = 1.0 / dx1;
+    let rdx2 = 1.0 / dx2;
+    let dy1 = y[1] - y[0];
+    let dy2 = y[2] - y[1];
+    let mat = Tridiagonal {
+        l: ndarray_linalg::MatrixLayout::C { row: 3, lda: 3 },
+        d: vec![2.0 * dx1, 2.0 * (rdx1 + rdx2), 2.0 * dx2],
+        dl: vec![rdx1, rdx2],
+        du: vec![rdx1, rdx2],
+    };
+    let v1 = 3.0 * dy1 * rdx1 * rdx1;
+    let v3 = 3.0 * dy2 * rdx2 * rdx2;
+    let v = Array1::from_iter([v1, v1 + v3, v3]);
+    let s = mat.solve_tridiagonal(&v).unwrap();
+    let a1 = s[0] * dx1 - dy1;
+    let b1 = -s[1] * dx1 + dy1;
+    let a2 = s[1] * dx2 - dy2;
+    let b2 = -s[2] * dx2 + dy2;
+    let out = t
+        .iter()
+        .map(|tt| *tt as f64)
+        .map(|tt| match bisect(&get_cow_slice(&x), &tt) {
+            1 => {
+                let lam = (tt - x[0]) / dx1;
+                let lamc = 1.0 - lam;
+                lamc * y[0] + lam * y[1] + lam * lamc * (a1 * lamc + b1 * lam)
+            }
+            2 => {
+                let lam = (tt - x[1]) / dx2;
+                let lamc = 1.0 - lam;
+                lamc * y[1] + lam * y[2] + lam * lamc * (a2 * lamc + b2 * lam)
+            }
+            3 => {
+                if tt == x[2] {
+                    y[2]
+                } else {
+                    panic!("Out of bounds")
+                }
+            }
+            _ => panic!("Out of bounds"),
+        })
+        .collect();
+    (t, out)
+
+    // x.t.into_iter().map(|tt| match tt.cmp(x[1]) {});
+}
+fn cubic_spline_large(
+    x: ArrayView1<f64>,
+    y: ArrayView1<f64>,
+    t: Array1<isize>,
+) -> (Array1<isize>, Array1<f64>) {
+    let n = x.len();
+    let dx: Vec<_> = (1..n).map(|i| x[i] - x[i - 1]).collect();
+    // let d2x: Vec<_> = (1..n - 1).map(|i| dx[i] - dx[i - 1]).collect();
+    let slope: Vec<_> = (1..n).map(|i| (y[i] - y[i - 1]) / dx[i - 1]).collect();
+    assert_eq!(dx.len(), n - 1);
+    let mut d = vec![0.0f64; n];
+    let mut dl = vec![0.0f64; n - 1];
+    let mut du = vec![0.0f64; n - 1];
+    let mut b = Array1::zeros(n);
+
+    for i in 1..(n - 1) {
+        d[i] = 2.0 * (dx[i] + dx[i - 1]);
+        dl[i - 1] = dx[i];
+        du[i] = dx[i - 1];
+        b[i] = 3.0 * (dx[i] * slope[i - 1] + dx[i - 1] * slope[i]);
+    }
+    d[0] = dx[1];
+    du[0] = x[2] - x[0];
+    b[0] = ((dx[0] + 2.0 * du[0]) * dx[1] * slope[0] + dx[0] * dx[0] * slope[1]) / du[0];
+
+    d[n - 1] = dx[n - 3];
+    dl[n - 2] = x[n - 1] - x[n - 3];
+    b[n - 1] = (dx[n - 2] * dx[n - 2] * slope[n - 3]
+        + (2.0 * dl[n - 2] + dx[n - 2]) * dx[n - 3] * slope[n - 2])
+        / dl[n - 2];
+    dbg!(&d);
+    dbg!(&dl);
+    dbg!(&du);
+    dbg!(&b);
+    dbg!(&slope);
+
+    let mat = Tridiagonal {
+        l: ndarray_linalg::MatrixLayout::C {
+            row: n as i32,
+            lda: n as i32,
+        },
+        d,
+        dl,
+        du,
+    };
+    let s = mat.solve_tridiagonal(&b).unwrap();
+
+    dbg!(&s);
+    let mut c = Array2::zeros((4, n - 1));
+    for i in 0..n - 1 {
+        let t = (s[i] + s[i + 1] - 2.0 * slope[i]) / dx[i];
+        c[(0, i)] = t / dx[i];
+        c[(1, i)] = (slope[i] - s[i]) / dx[i] - t;
+        c[(2, i)] = s[i];
+        c[(3, i)] = y[i];
+    }
+    dbg!(&c);
+    let out = t
+        .iter()
+        .map(|tt| *tt as f64)
+        .map(|tt| {
+            let ind = bisect(&get_cow_slice(&x), &tt);
+            if ind == n {
+                if tt == x[n - 1] {
+                    y[n - 1]
+                } else {
+                    panic!("Out of bounds")
+                }
+            } else if ind < n && ind > 0 {
+                let lam = tt - x[ind - 1];
+                let i = ind - 1;
+                c[(3, i)] + c[(2, i)] * lam + c[(1, i)] * lam * lam + c[(0, i)] * lam * lam * lam
+            } else {
+                panic!("Out of bounds")
+            }
+        })
+        .collect();
+    (t, out)
+}
+
+fn cubic_spline_impl(
+    n: usize,
+    extrema_pos: ArrayView1<isize>,
+    extrema_val: ArrayView1<f64>,
+) -> (Array1<isize>, Array1<f64>) {
+    let esize = extrema_pos.len();
+    let t: Array1<_> = (0..n as isize)
+        .filter(|tt| *tt >= extrema_pos[0] && *tt <= extrema_pos[esize - 1])
+        .collect();
+    if esize <= 3 {
+        cubic_spline_3pts(extrema_pos.mapv(|x| x as f64).view(), extrema_val, t)
+    } else {
+        cubic_spline_large(extrema_pos.mapv(|x| x as f64).view(), extrema_val, t)
+    }
+}
+
+type SplineReturn<'py> = (Bound<'py, PyArray1<isize>>, Bound<'py, PyArray1<f64>>);
+#[pyfunction]
+fn cubic_spline<'py>(
+    py: Python<'py>,
+    n: usize,
+    extrema_pos: PyReadonlyArray1<'py, isize>,
+    extrema_val: PyReadonlyArray1<'py, f64>,
+) -> PyResult<SplineReturn<'py>> {
+    let extrema_pos = extrema_pos.as_array();
+    let extrema_val = extrema_val.as_array();
+    let (pos, interp) = py.allow_threads(|| cubic_spline_impl(n, extrema_pos, extrema_val));
+    Ok((pos.to_pyarray(py), interp.to_pyarray(py)))
+}
+
 /// A Python module implemented in Rust.
 #[pymodule]
 fn _pyemd_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -626,14 +720,61 @@ fn _pyemd_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(find_extrema_simple, m)?)?;
     m.add_function(wrap_pyfunction!(find_extrema_simple_pos, m)?)?;
     m.add_function(wrap_pyfunction!(prepare_points_simple, m)?)?;
+    m.add_function(wrap_pyfunction!(cubic_spline, m)?)?;
     m.add_class::<FindExtremaOutput>()?;
     Ok(())
 }
-
+fn bisect<T: PartialOrd<T>>(a: &[T], x: &T) -> usize {
+    let mut lo = 0;
+    let mut hi = a.len();
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        // dbg!((mid, a[mid]));
+        if x < &a[mid] {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+        // dbg!((lo, hi));
+    }
+    lo
+}
 #[cfg(test)]
 mod test {
     use super::*;
-
+    #[test]
+    fn test_cubic_spline_3pts() {
+        let x = Array1::from_iter([0.0, 4.0, 10.0]);
+        let y = Array1::from_iter([1.0, -2.0, 4.0]);
+        let t = Array1::from_iter(0isize..=10isize);
+        let (_, out) = cubic_spline_3pts(x.view(), y.view(), t);
+        dbg!(&out);
+        assert_eq!(out[0], y[0]);
+        assert_eq!(out[10], y[2]);
+        assert_eq!(out[4], y[1]);
+    }
+    #[test]
+    fn test_cubic_spline_large() {
+        let x = Array1::from_iter([0.0, 4.0, 7.0, 10.0]);
+        let y = Array1::from_iter([1.0, -2.0, 6.0, 4.0]);
+        let t = Array1::from_iter(0isize..=10isize);
+        let (_, out) = cubic_spline_large(x.view(), y.view(), t);
+        dbg!(&out);
+        assert_eq!(out[0], y[0]);
+        assert_eq!(out[4], y[1]);
+        assert_eq!(out[7], y[2]);
+        assert_eq!(out[10], y[3]);
+    }
+    #[test]
+    fn test_bisect() {
+        assert_eq!(bisect(&[0.0, 1.0, 2.0], &1.0), 2);
+        assert_eq!(bisect(&[0.0, 1.0, 2.0], &0.99), 1);
+        assert_eq!(bisect(&[0.0, 1.0, 2.0], &0.0), 1);
+        assert_eq!(bisect(&[0.0, 1.0, 2.0], &1.99), 2);
+        assert_eq!(bisect(&[0.0, 1.0, 2.0], &2.0), 3);
+        assert_eq!(bisect(&[0.0, 1.0, 2.0], &3.0), 3);
+        assert_eq!(bisect(&[0.0, 1.0, 2.0], &-2.0), 0);
+    }
     #[test]
     fn test_zc() {
         assert_eq!(
