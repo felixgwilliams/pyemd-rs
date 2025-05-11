@@ -34,3 +34,11 @@ def prepare_points_simple(
 def find_extrema_simple_pos(
     val: npt.NDArray[np.float64],
 ) -> tuple[npt.NDArray[np.uintp], npt.NDArray[np.uintp]]: ...
+def cubic_spline(
+    n: int,
+    extrema_pos: npt.NDArray[np.intp],
+    extrema_val: npt.NDArray[np.float64],
+) -> tuple[npt.NDArray[np.intp], npt.NDArray[np.float64]]: ...
+def emd(
+    val: npt.NDArray[np.float64],
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]: ...

@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from PyEMD.EMD import EMD
-from pyemd_rs._pyemd_rs import find_extrema_simple, prepare_points_simple
+from pyemd_rs._pyemd_rs import cubic_spline, find_extrema_simple, prepare_points_simple
 
 zc_arrays = {
     "zeros": np.array([0, 0, 0, 0, 0], dtype=np.float64),
@@ -332,8 +332,10 @@ def test_prepare_points(arr_id):
 
 
 def test_prepare_points2():
-    # pytest.skip("Use to generate test examples")
+    pytest.skip("Use to generate test examples")
     gen = np.random.default_rng(12313)
+    emd = EMD()
+
     for _i in range(10000):
         arr = np.round(gen.random(size=20) * 100) - 50
         pos = np.arange(len(arr))
@@ -347,3 +349,44 @@ def test_prepare_points2():
         max_extrema, min_extrema = prepare_points_simple_orig(
             2, pos, arr, maxpos, None, minpos, None
         )
+        max_spline_pos, max_spline_val = emd.spline_points(pos, max_extrema)
+        min_spline_pos, min_spline_val = emd.spline_points(pos, min_extrema)
+        max_spline_pos2, max_spline_val2 = cubic_spline(
+            len(arr), max_extrema[0].astype(np.intp), max_extrema[1]
+        )
+        min_spline_pos2, min_spline_val2 = cubic_spline(
+            len(arr), min_extrema[0].astype(np.intp), min_extrema[1]
+        )
+
+        assert np.allclose(max_spline_val, max_spline_val2)
+        assert np.allclose(min_spline_val, min_spline_val2)
+        assert np.allclose(max_spline_pos, max_spline_pos2)
+        assert np.allclose(min_spline_pos, min_spline_pos2)
+
+
+@pytest.mark.parametrize("arr_id", long_zc.items(), ids=long_zc.keys())
+def test_cubic_spline(arr_id):
+    id_, arr = arr_id
+    emd = EMD()
+    pos = np.arange(len(arr), dtype=np.intp)
+
+    maxpos, maxval, minpos, minval, zc = EMD._find_extrema_simple(pos, arr)  # noqa: SLF001
+    if len(maxpos) + len(minpos) < 3:
+        pytest.skip()
+
+    max_extrema, min_extrema = prepare_points_simple_orig(2, pos, arr, maxpos, None, minpos, None)
+    max_spline_pos, max_spline_val = emd.spline_points(pos, max_extrema)
+    min_spline_pos, min_spline_val = emd.spline_points(pos, min_extrema)
+    max_spline_pos2, max_spline_val2 = cubic_spline(
+        len(arr), max_extrema[0].astype(np.intp), max_extrema[1]
+    )
+    min_spline_pos2, min_spline_val2 = cubic_spline(
+        len(arr), min_extrema[0].astype(np.intp), min_extrema[1]
+    )
+
+    assert np.allclose(max_spline_val, max_spline_val2)
+    assert np.allclose(min_spline_val, min_spline_val2)
+    assert np.allclose(max_spline_pos, max_spline_pos2)
+    assert np.allclose(min_spline_pos, min_spline_pos2)
+    # t = pos[np.r_[pos >= min_extrema[0, 0]] & np.r_[pos <= min_extrema[0, -1]]]
+    # t = pos[np.r_[pos >= max_extrema[0, 0]] & np.r_[pos <= max_extrema[0, -1]]]

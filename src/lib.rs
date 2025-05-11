@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::BinaryHeap};
 
 use ndarray_linalg::{SolveTridiagonal, Tridiagonal};
-use numpy::{ndarray::prelude::*, PyArray1, PyReadonlyArray1, ToPyArray};
+use numpy::{ndarray::prelude::*, PyArray1, PyArray2, PyReadonlyArray1, ToPyArray};
 use pyo3::prelude::*;
 
 /// Formats the sum of two numbers as string.
@@ -43,8 +43,9 @@ impl FindExtremaOutput {
 }
 
 fn find_extrema_simple_impl(val: ArrayView1<f64>) -> FindExtremaOutput {
-    let zc = find_zero_crossing_impl(val.as_standard_layout().as_slice().unwrap());
-    let (minpos, maxpos) = find_extrema_pos_impl(val.as_standard_layout().as_slice().unwrap());
+    let val_slice = get_cow_slice(&val);
+    let zc = find_zero_crossing_impl(&val_slice);
+    let (minpos, maxpos) = find_extrema_pos_impl(&val_slice);
     FindExtremaOutput {
         max_val: maxpos.iter().map(|i| val[*i]).collect(),
         min_val: minpos.iter().map(|i| val[*i]).collect(),
@@ -712,18 +713,6 @@ fn cubic_spline<'py>(
     let (pos, interp) = py.allow_threads(|| cubic_spline_impl(n, extrema_pos, extrema_val));
     Ok((pos.to_pyarray(py), interp.to_pyarray(py)))
 }
-
-/// A Python module implemented in Rust.
-#[pymodule]
-fn _pyemd_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(sum_as_string, m)?)?;
-    m.add_function(wrap_pyfunction!(find_extrema_simple, m)?)?;
-    m.add_function(wrap_pyfunction!(find_extrema_simple_pos, m)?)?;
-    m.add_function(wrap_pyfunction!(prepare_points_simple, m)?)?;
-    m.add_function(wrap_pyfunction!(cubic_spline, m)?)?;
-    m.add_class::<FindExtremaOutput>()?;
-    Ok(())
-}
 fn bisect<T: PartialOrd<T>>(a: &[T], x: &T) -> usize {
     let mut lo = 0;
     let mut hi = a.len();
@@ -739,6 +728,145 @@ fn bisect<T: PartialOrd<T>>(a: &[T], x: &T) -> usize {
     }
     lo
 }
+
+fn emd_impl(val: ArrayView1<f64>) -> (Array2<f64>, Array1<f64>) {
+    let mut finished = false;
+    let mut resid = val.to_owned();
+    const MAX_ITERATION: usize = 1000;
+    let n = val.len();
+    let mut imfs = Vec::new();
+    let mut imf_is_residual = false;
+    '_all_imf: while !finished {
+        let mut imf = resid.to_owned();
+        'cur_imf: for _i in 1..MAX_ITERATION {
+            let imf_view = imf.view();
+
+            let extremas = find_extrema_simple_impl(imf_view);
+
+            let ext_no = extremas.min_pos.len() + extremas.max_pos.len();
+            // let min_pos = Array1::from_iter(extremas.min_pos.iter().map(|x| *x as isize));
+            // let max_pos = Array1::from_iter(extremas.max_pos.iter().map(|x| *x as isize));
+            // let min_val = Array1::from_vec(extremas.min_val);
+            // let max_val = Array1::from_vec(extremas.max_val);
+
+            if ext_no > 2 {
+                let (tmin, zmin, tmax, zmax) = prepare_points_simple_impl(
+                    &get_cow_slice(&imf_view),
+                    &extremas.min_pos,
+                    &extremas.max_pos,
+                    2,
+                );
+                let tmin = Array1::from_vec(tmin);
+                let zmin = Array1::from_vec(zmin);
+                let tmax = Array1::from_vec(tmax);
+                let zmax = Array1::from_vec(zmax);
+                let (_, min_spline) = cubic_spline_impl(n, tmin.view(), zmin.view());
+                let (_, max_spline) = cubic_spline_impl(n, tmax.view(), zmax.view());
+                let imf_old = imf.to_owned();
+                imf = &imf - (&min_spline + &max_spline) * 0.5;
+                let imf_view = imf.view();
+
+                let extremas2 = find_extrema_simple_impl(imf_view);
+                let ext_no2 = extremas2.max_pos.len() + extremas2.min_pos.len();
+                let n_zc2 = extremas2.zc_ind.len();
+                if ext_no2.abs_diff(n_zc2) < 2
+                    && check_imf(imf_view, imf_old.view(), zmin.view(), zmax.view())
+                {
+                    break 'cur_imf;
+                }
+            } else {
+                finished = true;
+                imf_is_residual = true;
+                // break inner loop
+                break 'cur_imf;
+            }
+        }
+        resid -= &imf;
+        imfs.push(imf);
+        if end_condition(&resid.view()) {
+            // finished = true;
+            break '_all_imf;
+        }
+        dbg!(&imfs);
+    }
+    if imf_is_residual {
+        let last_imf = imfs.pop().unwrap();
+        resid = resid + last_imf;
+    }
+    let mut imf_arr = Array2::zeros((imfs.len(), n));
+    for (i, cur_imf) in imfs.into_iter().enumerate() {
+        let row = imf_arr.slice_mut(s![i, ..]);
+        cur_imf.move_into(row);
+    }
+
+    (imf_arr, resid)
+}
+fn end_condition(resid: &ArrayView1<f64>) -> bool {
+    let resmax = resid.iter().max_by(|a, b| a.total_cmp(b)).unwrap();
+    let resmin = resid.iter().min_by(|a, b| a.total_cmp(b)).unwrap();
+    let ressum: f64 = resid.iter().map(|x| x.abs()).sum();
+    resmax - resmin < 0.001 || ressum < 0.005
+}
+fn check_imf(
+    imf: ArrayView1<f64>,
+    imf_old: ArrayView1<f64>,
+    zmin: ArrayView1<f64>,
+    zmax: ArrayView1<f64>,
+) -> bool {
+    if zmin.iter().any(|z| *z > 0.0) || zmax.iter().any(|z| *z < 0.0) {
+        return false;
+    }
+    if imf.map(|x| x * x).sum() < 1e-10 {
+        return false;
+    }
+    let imf_diff = &imf - &imf_old;
+    let imf_diff_sqsum = imf_diff.map(|x| x * x).sum();
+    let svar = imf_diff_sqsum
+        / (imf.iter().max_by(|a, b| a.total_cmp(b)).unwrap()
+            - imf.iter().min_by(|a, b| a.total_cmp(b)).unwrap());
+    if svar < 0.001 {
+        return true;
+    }
+    let std: f64 = imf_diff
+        .iter()
+        .zip(imf)
+        .map(|(x, y)| *x * *x / *y / *y)
+        .sum();
+    if std < 0.2 {
+        return true;
+    }
+    let energy_ratio = imf_diff_sqsum / imf_old.map(|x| x * x).sum();
+    if energy_ratio < 0.2 {
+        return true;
+    }
+    false
+}
+
+#[pyfunction]
+fn emd<'py>(
+    py: Python<'py>,
+    val: PyReadonlyArray1<'py, f64>,
+) -> (Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<f64>>) {
+    let val = val.as_array();
+
+    // let out = find_extrema_simple_impl(val, pos);
+    let (imfs, resid) = py.allow_threads(|| emd_impl(val));
+    (imfs.to_pyarray(py), resid.to_pyarray(py))
+}
+
+/// A Python module implemented in Rust.
+#[pymodule]
+fn _pyemd_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(sum_as_string, m)?)?;
+    m.add_function(wrap_pyfunction!(find_extrema_simple, m)?)?;
+    m.add_function(wrap_pyfunction!(find_extrema_simple_pos, m)?)?;
+    m.add_function(wrap_pyfunction!(prepare_points_simple, m)?)?;
+    m.add_function(wrap_pyfunction!(cubic_spline, m)?)?;
+    m.add_function(wrap_pyfunction!(emd, m)?)?;
+    m.add_class::<FindExtremaOutput>()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
