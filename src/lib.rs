@@ -724,7 +724,7 @@ fn bisect<T: PartialOrd<T>>(a: &[T], x: &T) -> usize {
     lo
 }
 
-fn emd_impl(val: ArrayView1<f64>) -> (Array2<f64>, Array1<f64>) {
+fn emd_impl(val: ArrayView1<f64>, max_imf: Option<usize>) -> (Array2<f64>, Array1<f64>) {
     let mut finished = false;
     let mut resid = val.to_owned();
     const MAX_ITERATION: usize = 1000;
@@ -784,7 +784,7 @@ fn emd_impl(val: ArrayView1<f64>) -> (Array2<f64>, Array1<f64>) {
         }
         resid -= &imf;
         imfs.push(imf);
-        if end_condition(&resid.view()) {
+        if max_imf.is_some_and(|m| m <= imfs.len()) || end_condition(&resid.view()) {
             // finished = true;
             break '_all_imf;
         }
@@ -842,16 +842,17 @@ fn check_imf(
     }
     false
 }
-
 #[pyfunction]
+#[pyo3(signature = (val, max_imf=None))]
 fn emd<'py>(
     py: Python<'py>,
     val: PyReadonlyArray1<'py, f64>,
+    max_imf: Option<usize>,
 ) -> (Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<f64>>) {
     let val = val.as_array();
 
     // let out = find_extrema_simple_impl(val, pos);
-    let (imfs, resid) = py.allow_threads(|| emd_impl(val));
+    let (imfs, resid) = py.allow_threads(|| emd_impl(val, max_imf));
     (imfs.to_pyarray(py), resid.to_pyarray(py))
 }
 struct DoubleMt {
