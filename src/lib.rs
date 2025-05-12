@@ -1,8 +1,9 @@
-use std::{borrow::Cow, collections::BinaryHeap};
-
 use ndarray_linalg::{SolveTridiagonal, Tridiagonal};
 use numpy::{ndarray::prelude::*, PyArray1, PyArray2, PyReadonlyArray1, ToPyArray};
 use pyo3::prelude::*;
+use rand::RngCore;
+use rand_mt::Mt;
+use std::{borrow::Cow, collections::BinaryHeap};
 
 /// Formats the sum of two numbers as string.
 #[pyfunction]
@@ -368,10 +369,6 @@ fn prepare_points_simple_impl(
                 .copied()
                 .rev()
                 .collect();
-            tlmax = lmax
-                .iter()
-                .map(|x| 2 * lsym as isize - *x as isize)
-                .collect();
         } else {
             // dbg!("ml2");
             lmin = min_pos[0..end_min.min(nbsym)]
@@ -379,11 +376,9 @@ fn prepare_points_simple_impl(
                 .copied()
                 .rev()
                 .collect();
-            tlmin = lmin
-                .iter()
-                .map(|x| 2 * lsym as isize - *x as isize)
-                .collect();
         }
+        tlmax = lmax.iter().map(|x| -(*x as isize)).collect();
+        tlmin = lmin.iter().map(|x| -(*x as isize)).collect();
         // lsym = 0
     }
 
@@ -395,39 +390,39 @@ fn prepare_points_simple_impl(
         .iter()
         .map(|x| 2 * rsym as isize - *x as isize)
         .collect();
-    dbg!(&rmin);
-    dbg!(&rmax);
-    dbg!(rsym);
-    dbg!(&trmin);
-    dbg!(&trmax);
-    dbg!(n);
+    // dbg!(&rmin);
+    // dbg!(&rmax);
+    // dbg!(rsym);
+    // dbg!(&trmin);
+    // dbg!(&trmax);
+    // dbg!(n);
     if trmin[trmin.len() - 1] < n as isize - 1 || trmax[trmax.len() - 1] < n as isize - 1 {
         if rsym == n - 1 {
             panic!("Right edge bug.")
         }
         if rsym == max_pos[end_max - 1] {
-            dbg!("mr1");
+            // dbg!("mr1");
             rmax = max_pos[end_max.saturating_sub(nbsym)..]
                 .iter()
                 .copied()
                 .rev()
                 .collect();
-            trmax = rmax
-                .iter()
-                .map(|x| 2 * rsym as isize - *x as isize)
-                .collect();
         } else {
-            dbg!("mr2");
+            // dbg!("mr2");
             rmin = min_pos[end_min.saturating_sub(nbsym)..]
                 .iter()
                 .copied()
                 .rev()
                 .collect();
-            trmin = rmin
-                .iter()
-                .map(|x| 2 * rsym as isize - *x as isize)
-                .collect();
         }
+        trmax = rmax
+            .iter()
+            .map(|x| 2 * (n - 1) as isize - *x as isize)
+            .collect();
+        trmin = rmin
+            .iter()
+            .map(|x| 2 * (n - 1) as isize - *x as isize)
+            .collect();
         // rsym = n - 1
     }
     let tmin_it: Vec<_> = tlmin
@@ -634,11 +629,11 @@ fn cubic_spline_large(
     b[n - 1] = (dx[n - 2] * dx[n - 2] * slope[n - 3]
         + (2.0 * dl[n - 2] + dx[n - 2]) * dx[n - 3] * slope[n - 2])
         / dl[n - 2];
-    dbg!(&d);
-    dbg!(&dl);
-    dbg!(&du);
-    dbg!(&b);
-    dbg!(&slope);
+    // dbg!(&d);
+    // dbg!(&dl);
+    // dbg!(&du);
+    // dbg!(&b);
+    // dbg!(&slope);
 
     let mat = Tridiagonal {
         l: ndarray_linalg::MatrixLayout::C {
@@ -651,7 +646,7 @@ fn cubic_spline_large(
     };
     let s = mat.solve_tridiagonal(&b).unwrap();
 
-    dbg!(&s);
+    // dbg!(&s);
     let mut c = Array2::zeros((4, n - 1));
     for i in 0..n - 1 {
         let t = (s[i] + s[i + 1] - 2.0 * slope[i]) / dx[i];
@@ -660,7 +655,7 @@ fn cubic_spline_large(
         c[(2, i)] = s[i];
         c[(3, i)] = y[i];
     }
-    dbg!(&c);
+    // dbg!(&c);
     let out = t
         .iter()
         .map(|tt| *tt as f64)
@@ -750,6 +745,8 @@ fn emd_impl(val: ArrayView1<f64>) -> (Array2<f64>, Array1<f64>) {
             // let max_val = Array1::from_vec(extremas.max_val);
 
             if ext_no > 2 {
+                // dbg!(&extremas.min_pos);
+                // dbg!(&extremas.max_pos);
                 let (tmin, zmin, tmax, zmax) = prepare_points_simple_impl(
                     &get_cow_slice(&imf_view),
                     &extremas.min_pos,
@@ -760,9 +757,13 @@ fn emd_impl(val: ArrayView1<f64>) -> (Array2<f64>, Array1<f64>) {
                 let zmin = Array1::from_vec(zmin);
                 let tmax = Array1::from_vec(tmax);
                 let zmax = Array1::from_vec(zmax);
+                // dbg!((n, &tmin, &tmax, &zmin, &zmax));
                 let (_, min_spline) = cubic_spline_impl(n, tmin.view(), zmin.view());
                 let (_, max_spline) = cubic_spline_impl(n, tmax.view(), zmax.view());
                 let imf_old = imf.to_owned();
+                // dbg!(&min_spline);
+
+                // dbg!((imf.shape(), min_spline.shape(), max_spline.shape()));
                 imf = &imf - (&min_spline + &max_spline) * 0.5;
                 let imf_view = imf.view();
 
@@ -787,7 +788,7 @@ fn emd_impl(val: ArrayView1<f64>) -> (Array2<f64>, Array1<f64>) {
             // finished = true;
             break '_all_imf;
         }
-        dbg!(&imfs);
+        // dbg!(&imfs);
     }
     if imf_is_residual {
         let last_imf = imfs.pop().unwrap();
@@ -853,7 +854,84 @@ fn emd<'py>(
     let (imfs, resid) = py.allow_threads(|| emd_impl(val));
     (imfs.to_pyarray(py), resid.to_pyarray(py))
 }
+struct DoubleMt {
+    mt: Mt,
+    cached_gauss: Option<f64>,
+}
+trait CachedGauss {
+    fn push_gauss(&mut self, val: f64) -> bool;
+    fn pop_gauss(&mut self) -> Option<f64>;
+}
+impl CachedGauss for DoubleMt {
+    fn push_gauss(&mut self, val: f64) -> bool {
+        if self.cached_gauss.is_none() {
+            self.cached_gauss.replace(val);
+            true
+        } else {
+            false
+        }
+    }
+    fn pop_gauss(&mut self) -> Option<f64> {
+        self.cached_gauss.take()
+    }
+}
+impl DoubleMt {
+    fn new(seed: u32) -> Self {
+        DoubleMt {
+            mt: Mt::new(seed),
+            cached_gauss: None,
+        }
+    }
+}
+impl RngCore for DoubleMt {
+    fn fill_bytes(&mut self, dst: &mut [u8]) {
+        self.mt.fill_bytes(dst);
+    }
+    fn next_u32(&mut self) -> u32 {
+        self.mt.next_u32()
+    }
+    fn next_u64(&mut self) -> u64 {
+        self.mt.next_u64()
+    }
+}
 
+fn rng_double<R: RngCore>(rng: &mut R) -> f64 {
+    let a = rng.next_u32() >> 5;
+    let b = rng.next_u32() >> 6;
+    (a as f64 * 67108864.0 + b as f64) / 9007199254740992.0
+}
+
+fn normal_marsaglia2<R: RngCore + CachedGauss>(rng: &mut R) -> f64 {
+    if let Some(gg) = rng.pop_gauss() {
+        return gg;
+    }
+    let mut y: f64;
+    let mut r2: f64;
+    let mut x: f64;
+    while {
+        let xu = rng_double(rng);
+        let yu = rng_double(rng);
+        x = 2.0f64 * xu - 1.0;
+        y = 2.0f64 * yu - 1.0;
+        r2 = x * x + y * y;
+        r2 > 1.0 || r2 == 0.0
+    } {}
+    let f = (-2.0 * r2.ln() / r2).sqrt();
+    rng.push_gauss(x * f);
+    y * f
+}
+fn rng_norm_array<R: RngCore + CachedGauss>(rng: &mut R, size: usize, sig: f64) -> Array1<f64> {
+    (0..size).map(|_i| normal_marsaglia2(rng) * sig).collect()
+}
+fn normal_mt_impl(seed: u32, size: usize, scale: f64) -> Array1<f64> {
+    let mut rng = DoubleMt::new(seed);
+    rng_norm_array(&mut rng, size, scale)
+}
+#[pyfunction]
+fn normal_mt(py: Python<'_>, seed: u32, size: usize, scale: f64) -> Bound<'_, PyArray1<f64>> {
+    let arr = py.allow_threads(|| normal_mt_impl(seed, size, scale));
+    arr.to_pyarray(py)
+}
 /// A Python module implemented in Rust.
 #[pymodule]
 fn _pyemd_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -863,6 +941,7 @@ fn _pyemd_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(prepare_points_simple, m)?)?;
     m.add_function(wrap_pyfunction!(cubic_spline, m)?)?;
     m.add_function(wrap_pyfunction!(emd, m)?)?;
+    m.add_function(wrap_pyfunction!(normal_mt, m)?)?;
     m.add_class::<FindExtremaOutput>()?;
     Ok(())
 }

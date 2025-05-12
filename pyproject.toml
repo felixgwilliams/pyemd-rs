@@ -21,6 +21,9 @@ python-source = "python"
 module-name = "pyemd_rs._pyemd_rs"
 
 [dependency-groups]
+build = [
+    "maturin[patchelf]>=1.8.3",
+]
 dev = [
     "emd-signal>=1.6.4",
     "ipython>=8.18.1",
@@ -28,6 +31,7 @@ dev = [
     "pytest>=8.3.5",
     "pytest-cov>=6.1.1",
     "ruff>=0.11.4",
+    "tqdm>=4.67.1",
 ]
 
 [tool.ruff]

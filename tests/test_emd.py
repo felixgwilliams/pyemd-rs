@@ -3,75 +3,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from PyEMD.EMD import EMD
-from pyemd_rs._pyemd_rs import cubic_spline, find_extrema_simple, prepare_points_simple
+from pyemd_rs._pyemd_rs import cubic_spline, emd, find_extrema_simple, prepare_points_simple
+from tqdm import trange
 
-zc_arrays = {
-    "zeros": np.array([0, 0, 0, 0, 0], dtype=np.float64),
-    "zeros_ends": np.array([0, 1, 2, -3, 0], dtype=np.float64),
-    "normal": np.array([1, 2, -1, -2, 3, -1], dtype=np.float64),
-    "zero_gap": np.array([1, 2, 0, 0, -1], dtype=np.float64),
-    "zero_gap2": np.array([1, 2, 0, 0, 1], dtype=np.float64),
-    "zero_tail": np.array([1, 2, 0, 0, 0], dtype=np.float64),
-    "too_short": np.array([0], dtype=np.float64),
-    "too_short2": np.array([1], dtype=np.float64),
-    "empty": np.array([], dtype=np.float64),
-    "zz": np.array([0, 0], dtype=np.float64),
-    "zp": np.array([0, 1], dtype=np.float64),
-    "zn": np.array([0, -1], dtype=np.float64),
-    "pz": np.array([1, 0], dtype=np.float64),
-    "pp": np.array([1, 1], dtype=np.float64),
-    "on": np.array([1, -1], dtype=np.float64),
-    "nz": np.array([-1, 0], dtype=np.float64),
-    "np": np.array([-1, 1], dtype=np.float64),
-    "nn": np.array([-1, -1], dtype=np.float64),
-    "d2zero": np.array([2, 3, 3, 2, 4], dtype=np.float64),
-    "d2zero2": np.array([2, 3, 3, 3, 3, 2, 4], dtype=np.float64),
-    "d2zero3": np.array([2, 3, 3, 4, 2], dtype=np.float64),
-    "d2zero4": np.array([2, 3, 3, 3, 3, 4, 2], dtype=np.float64),
-    "repeats2": np.array([1, 2, 3, 3, 2, 2, 4], dtype=np.float64),
-    "repeats3": np.array([1, 2, 3, 3, 3, 2, 2, 2, 4], dtype=np.float64),
-    "original": np.array([-1, 0, 1, 0, -1, 0, 3, 0, -9, 0], dtype=np.float64),
-    "repeats": np.array([-1, 0, 1, 1, 0, -1, 0, 3, 0, -9, 0], dtype=np.float64),
-    "bound_extrapolation1": np.array(
-        [0, -3, 1, 4, 3, 2, -2, 0, 1, 2, 1, 0, 1, 2, 5, 4, 0, -2, -1], dtype=np.float64
-    ),
-    "bound_extrapolation2": np.array(
-        [-3, 1, 4, 3, 2, -2, 0, 1, 2, 1, 0, 1, 2, 5, 4, 0, -2], dtype=np.float64
-    ),
-    "bound_extrapolation3": np.array([1, 4, 3, 2, -2, 0, 1, 2, 1, 0, 1, 2, 5, 4], dtype=np.float64),
-    "bound_extrapolation4": np.array([4, 3, 2, -2, 0, 1, 2, 1, 0, 1, 2, 5], dtype=np.float64),
-    "oscillate": np.array([1, 0, -1, 0, 1, 0, -1, 0, 1], dtype=np.float64),
-    "test": np.array([2, 1, 2, 3, 2, 3, 2, 3, 2, 2], dtype=np.float64),
-    "mirror_mr1": np.array(
-        [81, 89, 63, 96, 64, 13, 52, 54, 18, 11, 71, 88, 61, 78, 2, 90, 76, 64, 54, 23],
-        dtype=np.float64,
-    ),
-    "mirror_ml1": np.array(
-        [26, 66, 84, 92, 93, 11, 44, 17, 40, 7, 95, 25, 98, 13, 40, 78, 87, 78, 18, 40],
-        dtype=np.float64,
-    ),
-    "mirror_mr2": np.array(
-        [52, 20, 75, 56, 65, 65, 37, 79, 73, 66, 9, 48, 57, 44, 75, 3, 34, 36, 38, 73],
-        dtype=np.float64,
-    ),
-    "mirror_ml2": np.array(
-        [81, 78, 69, 65, 59, 21, 99, 88, 2, 98, 56, 77, 84, 28, 11, 52, 55, 27, 46, 11],
-        dtype=np.float64,
-    ),
-    "unmatched": np.array(
-        [-34, -34, 15, -33, 34, -29, 44, 0, -9, 1, 37, 44, 3, -48, -16, 25, -45, 12, 40, -9],
-        dtype=np.float64,
-    ),
-    "unmatched2": np.array(
-        [45, 26, -26, -22, -21, 48, 48, -35, -35, 12, 8, -49, -20, 43, -6, 9, 20, -29, 4, -36],
-        dtype=np.float64,
-    ),
-    "level_ind_1": np.array(
-        [35, 32, 32, -32, -32, -10, 7, -37, 46, -17, -38, 2, 31, -37, 12, 24, -40, -34, 6, 43],
-        dtype=np.float64,
-    ),
-}
-long_zc = {k: v for k, v in zc_arrays.items() if len(v) >= 6}
+from . import long_zc, zc_arrays
+
 FindExtremaOutput2 = tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
 
 
@@ -168,33 +104,30 @@ def prepare_points_simple_orig(  # noqa: C901, PLR0912, PLR0915
 
     # If mirrored points are not outside passed time range.
     if tlmin[0] > T[0] or tlmax[0] > T[0]:
+        if lsym == ind_max[0]:
+            lmax = ind_max[0 : min(end_max, nbsym)][::-1]
+        else:
+            lmin = ind_min[0 : min(end_min, nbsym)][::-1]
+
         if lsym == 0:
             raise Exception("Left edge BUG")  # noqa: TRY002
-        if lsym == ind_max[0]:
-            print("ml1")
-            lmax = ind_max[0 : min(end_max, nbsym)][::-1]
-            tlmax = 2 * T[lsym] - T[lmax]
-        else:
-            print("ml2")
-            lmin = ind_min[0 : min(end_min, nbsym)][::-1]
-            tlmin = 2 * T[lsym] - T[lmin]
 
         lsym = 0
-    print(rmin, rmax, rsym)
-    print(trmin, trmax)
+        tlmin = 2 * T[lsym] - T[lmin]
+        tlmax = 2 * T[lsym] - T[lmax]
+
     if trmin[-1] < T[-1] or trmax[-1] < T[-1]:
+        if rsym == ind_max[-1]:
+            rmax = ind_max[max(end_max - nbsym, 0) :][::-1]
+        else:
+            rmin = ind_min[max(end_min - nbsym, 0) :][::-1]
+
         if rsym == len(S) - 1:
             raise Exception("Right edge BUG")  # noqa: TRY002
-        if rsym == ind_max[-1]:
-            print("mr1")
-            rmax = ind_max[max(end_max - nbsym, 0) :][::-1]
-            trmax = 2 * T[rsym] - T[rmax]
-        else:
-            print("mr2")
-            rmin = ind_min[max(end_min - nbsym, 0) :][::-1]
-            trmin = 2 * T[rsym] - T[rmin]
 
         rsym = len(S) - 1
+        trmin = 2 * T[rsym] - T[rmin]
+        trmax = 2 * T[rsym] - T[rmax]
 
     zlmax = S[lmax]
     zlmin = S[lmin]
@@ -321,7 +254,7 @@ def test_prepare_points(arr_id):
     print(id_, max_extrema, min_extrema)
 
     (tmin, zmin, tmax, zmax) = prepare_points_simple(
-        arr, minpos.astype(np.uint64), maxpos.astype(np.uint64), 2
+        arr, minpos.astype(np.uintp), maxpos.astype(np.uint64), 2
     )
     assert np.array_equal(max_extrema[0, :], tmax)
     assert np.array_equal(max_extrema[1, :], zmax)
@@ -334,9 +267,9 @@ def test_prepare_points(arr_id):
 def test_prepare_points2():
     pytest.skip("Use to generate test examples")
     gen = np.random.default_rng(12313)
-    emd = EMD()
+    emd_obj = EMD()
 
-    for _i in range(10000):
+    for _i in trange(10000):
         arr = np.round(gen.random(size=20) * 100) - 50
         pos = np.arange(len(arr))
         maxpos, maxval, minpos, minval, zc = find_extrema_simple_orig(pos, arr)
@@ -349,8 +282,8 @@ def test_prepare_points2():
         max_extrema, min_extrema = prepare_points_simple_orig(
             2, pos, arr, maxpos, None, minpos, None
         )
-        max_spline_pos, max_spline_val = emd.spline_points(pos, max_extrema)
-        min_spline_pos, min_spline_val = emd.spline_points(pos, min_extrema)
+        max_spline_pos, max_spline_val = emd_obj.spline_points(pos, max_extrema)
+        min_spline_pos, min_spline_val = emd_obj.spline_points(pos, min_extrema)
         max_spline_pos2, max_spline_val2 = cubic_spline(
             len(arr), max_extrema[0].astype(np.intp), max_extrema[1]
         )
@@ -362,6 +295,11 @@ def test_prepare_points2():
         assert np.allclose(min_spline_val, min_spline_val2)
         assert np.allclose(max_spline_pos, max_spline_pos2)
         assert np.allclose(min_spline_pos, min_spline_pos2)
+        emd_obj = EMD()
+        emd_obj.emd(arr)
+        imf, resid = emd(arr)
+        assert np.allclose(imf, emd_obj.imfs)
+        assert np.allclose(resid, emd_obj.residue)
 
 
 @pytest.mark.parametrize("arr_id", long_zc.items(), ids=long_zc.keys())
@@ -390,3 +328,37 @@ def test_cubic_spline(arr_id):
     assert np.allclose(min_spline_pos, min_spline_pos2)
     # t = pos[np.r_[pos >= min_extrema[0, 0]] & np.r_[pos <= min_extrema[0, -1]]]
     # t = pos[np.r_[pos >= max_extrema[0, 0]] & np.r_[pos <= max_extrema[0, -1]]]
+
+
+spline_inputs = {
+    "min_example": np.array(
+        [[-3, 0, 2, 5, 9, 12, 14, 16, 18], [13.0, 63.0, 63.0, 13.0, 11.0, 61.0, 2.0, 2.0, 61.0]]
+    ),
+    "max_example": np.array(
+        [[-5, -1, 1, 3, 7, 11, 13, 15, 17], [54.0, 96.0, 89.0, 96.0, 54.0, 88.0, 78.0, 90.0, 78.0]]
+    ),
+}
+
+
+@pytest.mark.parametrize("cube_arr_id", spline_inputs.items(), ids=spline_inputs.keys())
+def test_cubic_spline2(cube_arr_id):
+    id_, arr = cube_arr_id
+    emd = EMD()
+    n = 20
+    pos = np.arange(n, dtype=np.intp)
+
+    spline_pos, spline_val = emd.spline_points(pos, arr)
+    spline_pos2, spline_val2 = cubic_spline(n, arr[0].astype(np.intp), arr[1])
+
+    assert np.allclose(spline_pos, spline_pos2)
+    assert np.allclose(spline_val, spline_val2)
+
+
+@pytest.mark.parametrize("arr_id", long_zc.items(), ids=long_zc.keys())
+def test_emd(arr_id):
+    id_, arr = arr_id
+    emd_obj = EMD()
+    emd_obj.emd(arr)
+    imf, resid = emd(arr)
+    assert np.allclose(imf, emd_obj.imfs)
+    assert np.allclose(resid, emd_obj.residue)
