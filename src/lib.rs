@@ -1,8 +1,12 @@
 use ndarray_linalg::{SolveTridiagonal, Tridiagonal};
-use numpy::{ndarray::prelude::*, PyArray1, PyArray2, PyReadonlyArray1, ToPyArray};
+use numpy::{
+    ndarray::{prelude::*, Dimension, Shape},
+    PyArray1, PyArray2, PyReadonlyArray1, ToPyArray,
+};
 use pyo3::prelude::*;
 use rand::RngCore;
 use rand_mt::Mt;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::{borrow::Cow, collections::BinaryHeap};
 
 /// Formats the sum of two numbers as string.
@@ -723,11 +727,11 @@ fn bisect<T: PartialOrd<T>>(a: &[T], x: &T) -> usize {
     }
     lo
 }
-
-fn emd_impl(val: ArrayView1<f64>, max_imf: Option<usize>) -> (Array2<f64>, Array1<f64>) {
+const MAX_ITERATION: usize = 1000;
+type RsEMDOut = (Array2<f64>, Array1<f64>);
+fn emd_impl(val: ArrayView1<f64>, max_imf: Option<usize>) -> RsEMDOut {
     let mut finished = false;
     let mut resid = val.to_owned();
-    const MAX_ITERATION: usize = 1000;
     let n = val.len();
     let mut imfs = Vec::new();
     let mut imf_is_residual = false;
@@ -806,8 +810,23 @@ fn end_condition(resid: &ArrayView1<f64>) -> bool {
     let resmax = resid.iter().max_by(|a, b| a.total_cmp(b)).unwrap();
     let resmin = resid.iter().min_by(|a, b| a.total_cmp(b)).unwrap();
     let ressum: f64 = resid.iter().map(|x| x.abs()).sum();
-    resmax - resmin < 0.001 || ressum < 0.005
+
+    resmax - resmin < RANGE_THRESH || ressum < TOTAL_POWER_THRESH
 }
+// EMD parameters
+const SVAR_THRESH: f64 = 0.001;
+const ENERGY_RATIO_THRESH: f64 = 0.2;
+const STD_THRESH: f64 = 0.2;
+const RANGE_THRESH: f64 = 0.001;
+const TOTAL_POWER_THRESH: f64 = 0.005;
+
+//ceemdan parameters
+const C_TRIALS: usize = 100;
+const EPSILON: f64 = 0.005;
+const NOISE_SCALE: f64 = 1.0;
+const C_RANGE_THRESH: f64 = 0.01;
+const C_TOTAL_POWER_THRESH: f64 = 0.05;
+const C_SEED: u32 = 123;
 fn check_imf(
     imf: ArrayView1<f64>,
     imf_old: ArrayView1<f64>,
@@ -825,7 +844,7 @@ fn check_imf(
     let svar = imf_diff_sqsum
         / (imf.iter().max_by(|a, b| a.total_cmp(b)).unwrap()
             - imf.iter().min_by(|a, b| a.total_cmp(b)).unwrap());
-    if svar < 0.001 {
+    if svar < SVAR_THRESH {
         return true;
     }
     let std: f64 = imf_diff
@@ -833,22 +852,24 @@ fn check_imf(
         .zip(imf)
         .map(|(x, y)| *x * *x / *y / *y)
         .sum();
-    if std < 0.2 {
+    if std < STD_THRESH {
         return true;
     }
     let energy_ratio = imf_diff_sqsum / imf_old.map(|x| x * x).sum();
-    if energy_ratio < 0.2 {
+    if energy_ratio < ENERGY_RATIO_THRESH {
         return true;
     }
     false
 }
+
+type PyEMDOut<'py> = (Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<f64>>);
 #[pyfunction]
 #[pyo3(signature = (val, max_imf=None))]
 fn emd<'py>(
     py: Python<'py>,
     val: PyReadonlyArray1<'py, f64>,
     max_imf: Option<usize>,
-) -> (Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<f64>>) {
+) -> PyEMDOut<'py> {
     let val = val.as_array();
 
     // let out = find_extrema_simple_impl(val, pos);
@@ -921,10 +942,25 @@ fn normal_marsaglia2<R: RngCore + CachedGauss>(rng: &mut R) -> f64 {
     rng.push_gauss(x * f);
     y * f
 }
-fn rng_norm_array<R: RngCore + CachedGauss>(rng: &mut R, size: usize, sig: f64) -> Array1<f64> {
+fn rng_norm_vec<R: RngCore + CachedGauss>(rng: &mut R, size: usize, sig: f64) -> Vec<f64> {
     (0..size).map(|_i| normal_marsaglia2(rng) * sig).collect()
 }
-fn normal_mt_impl(seed: u32, size: usize, scale: f64) -> Array1<f64> {
+
+fn rng_norm_array<R: RngCore + CachedGauss, Sh: ShapeBuilder<Dim = D>, D: Dimension>(
+    rng: &mut R,
+    size: Sh,
+    sig: f64,
+) -> Array<f64, D> {
+    let shape: Shape<D> = size.f();
+    let n = shape.size();
+    Array::from_shape_vec(shape, rng_norm_vec(rng, n, sig)).unwrap()
+}
+fn normal_mt_impl<Sh: ShapeBuilder<Dim = D>, D: Dimension>(
+    seed: u32,
+    size: Sh,
+    scale: f64,
+) -> Array<f64, D> {
+    // let mut out: Array<f64, D> = Array::default(size);
     let mut rng = DoubleMt::new(seed);
     rng_norm_array(&mut rng, size, scale)
 }
@@ -933,6 +969,32 @@ fn normal_mt(py: Python<'_>, seed: u32, size: usize, scale: f64) -> Bound<'_, Py
     let arr = py.allow_threads(|| normal_mt_impl(seed, size, scale));
     arr.to_pyarray(py)
 }
+
+fn ceemdan_impl(val: ArrayView1<f64>, max_imf: Option<usize>) {
+    let scale_s = val.std(0.0);
+    let val = &val / scale_s;
+    let n = val.len();
+    let trials = C_TRIALS;
+
+    let all_noise = normal_mt_impl(C_SEED, (n, trials), NOISE_SCALE);
+    let all_noise_emd: Vec<_> = (0..trials)
+        .into_par_iter()
+        .map(|i| emd_impl(all_noise.column(i), None))
+        .collect();
+
+    todo!()
+}
+
+#[pyfunction]
+#[pyo3(signature = (val, max_imf=None))]
+fn ceemdan<'py>(py: Python<'py>, val: PyReadonlyArray1<'py, f64>, max_imf: Option<usize>) {
+    // PyEMDOut<'py>
+    let val = val.as_array();
+    py.allow_threads(|| ceemdan_impl(val, max_imf));
+    // let (imfs, resid) = py.allow_threads(|| ceemdan_impl(val, max_imf));
+    // (imfs.to_pyarray(py), resid.to_pyarray(py))
+}
+
 /// A Python module implemented in Rust.
 #[pymodule]
 fn _pyemd_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -943,6 +1005,7 @@ fn _pyemd_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(cubic_spline, m)?)?;
     m.add_function(wrap_pyfunction!(emd, m)?)?;
     m.add_function(wrap_pyfunction!(normal_mt, m)?)?;
+    m.add_function(wrap_pyfunction!(ceemdan, m)?)?;
     m.add_class::<FindExtremaOutput>()?;
     Ok(())
 }

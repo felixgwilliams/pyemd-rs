@@ -16,4 +16,5 @@ numpy = "0.24"
 pyo3 = { version = "0.24", features = ["anyhow"] }
 rand = "0.9.1"
 rand_mt = "5.0.0"
+rayon = "1.10.0"
 thiserror = "2.0.12"
