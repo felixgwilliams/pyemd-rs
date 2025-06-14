@@ -827,6 +827,8 @@ const NOISE_SCALE: f64 = 1.0;
 const C_RANGE_THRESH: f64 = 0.01;
 const C_TOTAL_POWER_THRESH: f64 = 0.05;
 const C_SEED: u32 = 123;
+const C_MAX_IMF: usize = 100;
+
 fn check_imf(
     imf: ArrayView1<f64>,
     imf_old: ArrayView1<f64>,
@@ -970,7 +972,53 @@ fn normal_mt(py: Python<'_>, seed: u32, size: usize, scale: f64) -> Bound<'_, Py
     arr.to_pyarray(py)
 }
 
-fn ceemdan_impl(val: ArrayView1<f64>, max_imf: Option<usize>) {
+trait Viewable<'a, D: Dimension> {
+    fn views(&'a self) -> Vec<ArrayView<'a, f64, D>>;
+}
+impl<'a, D: Dimension> Viewable<'a, D> for Vec<Array<f64, D>> {
+    fn views(&'a self) -> Vec<ArrayView<'a, f64, D>> {
+        self.iter().map(|x| x.view()).collect()
+    }
+}
+
+fn eemd(val: ArrayView1<f64>, max_imf: Option<usize>) -> Array1<f64> {
+    todo!()
+}
+fn c_end_condition(
+    scaled_residue: ArrayView1<f64>,
+    all_cimfs: &[ArrayView1<f64>],
+    max_imf: Option<usize>,
+) -> bool {
+    let n_imfs = all_cimfs.len();
+    if max_imf.is_some_and(|mi| n_imfs >= mi) {
+        return true;
+    }
+    let (emd, _) = emd_impl(scaled_residue, Some(1));
+    if emd.shape()[0] == 0 {
+        return true;
+    }
+    if scaled_residue
+        .iter()
+        .copied()
+        .reduce(f64::max)
+        .unwrap_or(0.0)
+        - scaled_residue
+            .iter()
+            .copied()
+            .reduce(f64::min)
+            .unwrap_or(0.0)
+        < C_RANGE_THRESH
+    {
+        return true;
+    }
+    if scaled_residue.iter().map(|x| x.abs()).sum::<f64>() < C_TOTAL_POWER_THRESH {
+        return true;
+    }
+
+    false
+}
+
+fn ceemdan_impl(val: ArrayView1<f64>, max_imf: Option<usize>) -> RsEMDOut {
     let scale_s = val.std(0.0);
     let val = &val / scale_s;
     let n = val.len();
@@ -982,7 +1030,44 @@ fn ceemdan_impl(val: ArrayView1<f64>, max_imf: Option<usize>) {
         .map(|i| emd_impl(all_noise.column(i), None))
         .collect();
 
-    todo!()
+    let mut all_cimfs = vec![eemd(val.view(), Some(1))];
+
+    let mut prev_res = &val - &all_cimfs[0];
+    let mut scaled_residue = all_cimfs[0].clone();
+
+    for _ in 0..C_MAX_IMF {
+        if c_end_condition(scaled_residue.view(), &all_cimfs.views(), max_imf) {
+            break;
+        }
+        let beta = prev_res.std(0.0) * EPSILON;
+        let mut local_mean = Array1::zeros(n);
+        (0..trials).for_each(|trial| {
+            let cur_noise_imf_resid = &all_noise_emd[trial];
+            let n_noise_imf = cur_noise_imf_resid.0.shape()[0];
+            let mut res = prev_res.clone();
+
+            if n_noise_imf == all_cimfs.len() {
+                res += &(&cur_noise_imf_resid.1 * beta);
+            } else if n_noise_imf > all_cimfs.len() {
+                res += &(&cur_noise_imf_resid.0.row(all_cimfs.len()) * beta);
+            }
+            let (_, resid) = emd_impl(res.view(), Some(1));
+            local_mean += &(&resid / (trials as f64));
+        });
+        let imf = &prev_res - &local_mean;
+        scaled_residue -= &imf;
+        all_cimfs.push(imf);
+        prev_res = local_mean.clone();
+    }
+    // let resid =
+    let mut imf_arr = Array2::zeros((all_cimfs.len(), n));
+    for (i, cur_imf) in all_cimfs.into_iter().enumerate() {
+        let row = imf_arr.slice_mut(s![i, ..]);
+        let scaled_imf = cur_imf * scale_s;
+        (scaled_imf).move_into(row);
+    }
+
+    (imf_arr, &scaled_residue * scale_s)
 }
 
 #[pyfunction]
