@@ -28,6 +28,7 @@ dev = [
     "emd-signal>=1.6.4",
     "ipython>=8.18.1",
     "maturin>=1.8.3",
+    "polars>=1.30.0",
     "pytest>=8.3.5",
     "pytest-cov>=6.1.1",
     "ruff>=0.11.4",

@@ -7,7 +7,7 @@ use pyo3::prelude::*;
 use rand::RngCore;
 use rand_mt::Mt;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use std::{borrow::Cow, collections::BinaryHeap};
+use std::{borrow::Cow, collections::BinaryHeap, sync::Mutex};
 
 /// Formats the sum of two numbers as string.
 #[pyfunction]
@@ -92,7 +92,8 @@ fn find_zero_crossing_impl(val: &[f64]) -> Vec<usize> {
         } else if val[i] == 0.0 {
             out.push(midpoint(i, debz.unwrap()));
             debz = None;
-        } else if val[i + 1].signum() != val[i].signum() {
+        } else if (val[i + 1] > 0.0) != (val[i] > 0.0) {
+            // } else if val[i + 1].signum() != val[i].signum() {
             out.push(i)
         }
     }
@@ -131,7 +132,8 @@ fn find_extrema_pos_impl(val: &[f64]) -> (Vec<usize>, Vec<usize>) {
                 cur_level = None;
             }
 
-            if d2 != 0.0 && d1.signum() != d2.signum() {
+            if d2 != 0.0 && (d1 > 0.0) != (d2 > 0.0) {
+                // if d2 != 0.0 && d1.signum() != d2.signum() {
                 if d2 < 0.0 {
                     minout.push(i + 1);
                 }
@@ -578,7 +580,7 @@ fn cubic_spline_3pts(
     let out = t
         .iter()
         .map(|tt| *tt as f64)
-        .map(|tt| match bisect(&get_cow_slice(&x), &tt) {
+        .map(|tt| match find_ind(&get_cow_slice(&x), &tt) {
             1 => {
                 let lam = (tt - x[0]) / dx1;
                 let lamc = 1.0 - lam;
@@ -633,11 +635,6 @@ fn cubic_spline_large(
     b[n - 1] = (dx[n - 2] * dx[n - 2] * slope[n - 3]
         + (2.0 * dl[n - 2] + dx[n - 2]) * dx[n - 3] * slope[n - 2])
         / dl[n - 2];
-    // dbg!(&d);
-    // dbg!(&dl);
-    // dbg!(&du);
-    // dbg!(&b);
-    // dbg!(&slope);
 
     let mat = Tridiagonal {
         l: ndarray_linalg::MatrixLayout::C {
@@ -660,26 +657,30 @@ fn cubic_spline_large(
         c[(3, i)] = y[i];
     }
     // dbg!(&c);
-    let out = t
-        .iter()
-        .map(|tt| *tt as f64)
-        .map(|tt| {
-            let ind = bisect(&get_cow_slice(&x), &tt);
-            if ind == n {
-                if tt == x[n - 1] {
-                    y[n - 1]
-                } else {
-                    panic!("Out of bounds")
-                }
-            } else if ind < n && ind > 0 {
-                let lam = tt - x[ind - 1];
-                let i = ind - 1;
-                c[(3, i)] + c[(2, i)] * lam + c[(1, i)] * lam * lam + c[(0, i)] * lam * lam * lam
+    let x_slice = get_cow_slice(&x);
+    let mut out = Array1::zeros(t.len());
+    let mut ind = 0usize;
+    // dbg!(&t);
+    // dbg!(&x);
+    for (j, tt) in t.iter().enumerate() {
+        let tt = *tt as f64;
+
+        ind = find_ind(&x_slice[ind.saturating_sub(1)..], &tt) + ind.saturating_sub(1);
+        if ind == n {
+            if tt == x[n - 1] {
+                out[j] = y[n - 1];
             } else {
                 panic!("Out of bounds")
             }
-        })
-        .collect();
+        } else if ind < n && ind > 0 {
+            let lam = tt - x[ind - 1];
+            let i = ind - 1;
+            out[j] =
+                c[(3, i)] + c[(2, i)] * lam + c[(1, i)] * lam * lam + c[(0, i)] * lam * lam * lam;
+        } else {
+            panic!("Out of bounds")
+        }
+    }
     (t, out)
 }
 
@@ -712,20 +713,34 @@ fn cubic_spline<'py>(
     let (pos, interp) = py.allow_threads(|| cubic_spline_impl(n, extrema_pos, extrema_val));
     Ok((pos.to_pyarray(py), interp.to_pyarray(py)))
 }
-fn bisect<T: PartialOrd<T>>(a: &[T], x: &T) -> usize {
+
+// bisection is a faster algorithm  to look up indices in general
+// but in our case, the index we need to find is (I think) either 0 or 1, so it is actually faster
+// to just check these two. In fact bisect probably has worst case performance with our situation
+// right?
+fn _find_ind_bisect<T: PartialOrd<T>>(a: &[T], x: &T) -> usize {
     let mut lo = 0;
     let mut hi = a.len();
     while lo < hi {
         let mid = (lo + hi) / 2;
-        // dbg!((mid, a[mid]));
         if x < &a[mid] {
             hi = mid;
         } else {
             lo = mid + 1;
         }
-        // dbg!((lo, hi));
     }
     lo
+}
+fn find_ind<T: PartialOrd<T>>(a: &[T], x: &T) -> usize {
+    if x >= &a[a.len() - 1] {
+        return a.len();
+    }
+    for (i, ai) in a.iter().enumerate() {
+        if x < ai {
+            return i;
+        }
+    }
+    unreachable!();
 }
 const MAX_ITERATION: usize = 1000;
 type RsEMDOut = (Array2<f64>, Array1<f64>);
@@ -821,8 +836,8 @@ const RANGE_THRESH: f64 = 0.001;
 const TOTAL_POWER_THRESH: f64 = 0.005;
 
 //ceemdan parameters
-const C_TRIALS: usize = 100;
-const EPSILON: f64 = 0.005;
+// const C_TRIALS: usize = 100;
+const C_EPSILON: f64 = 0.005;
 const NOISE_SCALE: f64 = 1.0;
 const C_RANGE_THRESH: f64 = 0.01;
 const C_TOTAL_POWER_THRESH: f64 = 0.05;
@@ -981,23 +996,41 @@ impl<'a, D: Dimension> Viewable<'a, D> for Vec<Array<f64, D>> {
     }
 }
 
-fn eemd(val: ArrayView1<f64>, max_imf: Option<usize>) -> Array1<f64> {
-    todo!()
+fn _eemd(val: ArrayView1<f64>, trials: usize, noise_emd_1: &[ArrayView1<f64>]) -> Array1<f64> {
+    let n = val.len();
+
+    let out = Mutex::new(Array1::zeros(n));
+
+    (0..trials).into_par_iter().for_each(|t| {
+        let cur_emd = emd_impl((&val + (C_EPSILON * &noise_emd_1[t])).view(), Some(1));
+        let mut out = out.lock().unwrap();
+        for i in 0..n {
+            out[i] += cur_emd.0.row(0)[i] / (trials as f64);
+        }
+    });
+
+    out.into_inner().unwrap()
 }
+
 fn c_end_condition(
     scaled_residue: ArrayView1<f64>,
     all_cimfs: &[ArrayView1<f64>],
     max_imf: Option<usize>,
+    i: usize,
 ) -> bool {
     let n_imfs = all_cimfs.len();
     if max_imf.is_some_and(|mi| n_imfs >= mi) {
         return true;
     }
     let (emd, _) = emd_impl(scaled_residue, Some(1));
+    if i == 0 {
+        // dbg!(&scaled_residue);
+        // dbg!(&emd);
+    }
     if emd.shape()[0] == 0 {
         return true;
     }
-    if scaled_residue
+    let residue_range = scaled_residue
         .iter()
         .copied()
         .reduce(f64::max)
@@ -1006,40 +1039,57 @@ fn c_end_condition(
             .iter()
             .copied()
             .reduce(f64::min)
-            .unwrap_or(0.0)
-        < C_RANGE_THRESH
-    {
+            .unwrap_or(0.0);
+    if i == 0 {
+        // dbg!(residue_range);
+    }
+    if residue_range < C_RANGE_THRESH {
         return true;
     }
-    if scaled_residue.iter().map(|x| x.abs()).sum::<f64>() < C_TOTAL_POWER_THRESH {
+    let residue_power = scaled_residue.iter().map(|x| x.abs()).sum::<f64>();
+    if i == 0 {
+        // dbg!(residue_power);
+    }
+    if residue_power < C_TOTAL_POWER_THRESH {
         return true;
     }
 
     false
 }
 
-fn ceemdan_impl(val: ArrayView1<f64>, max_imf: Option<usize>) -> RsEMDOut {
+fn ceemdan_impl(val: ArrayView1<f64>, trials: usize, max_imf: Option<usize>) -> RsEMDOut {
     let scale_s = val.std(0.0);
     let val = &val / scale_s;
     let n = val.len();
-    let trials = C_TRIALS;
+    // dbg!(trials);
+    // let trials = C_TRIALS;
 
     let all_noise = normal_mt_impl(C_SEED, (n, trials), NOISE_SCALE);
+    // dbg!(&all_noise);
     let all_noise_emd: Vec<_> = (0..trials)
         .into_par_iter()
-        .map(|i| emd_impl(all_noise.column(i), None))
+        .map(|i| {
+            let (imfs, resid) = emd_impl(all_noise.column(i), None);
+            let imf_sd = imfs.row(0).std(0.0);
+            (imfs / imf_sd, resid / imf_sd)
+        })
         .collect();
+    // dbg!(&all_noise_emd);
 
-    let mut all_cimfs = vec![eemd(val.view(), Some(1))];
+    let noise_emd_1: Vec<_> = all_noise_emd.iter().map(|x| x.0.row(0)).collect();
+
+    let mut all_cimfs = vec![_eemd(val.view(), trials, &noise_emd_1)];
+    // dbg!(&all_cimfs[0]);
 
     let mut prev_res = &val - &all_cimfs[0];
-    let mut scaled_residue = all_cimfs[0].clone();
+    // let mut scaled_residue = all_cimfs[0].clone();
+    let mut scaled_residue = prev_res.clone();
 
-    for _ in 0..C_MAX_IMF {
-        if c_end_condition(scaled_residue.view(), &all_cimfs.views(), max_imf) {
+    for i in 0..C_MAX_IMF {
+        if c_end_condition(scaled_residue.view(), &all_cimfs.views(), max_imf, i) {
             break;
         }
-        let beta = prev_res.std(0.0) * EPSILON;
+        let beta = prev_res.std(0.0) * C_EPSILON;
         let mut local_mean = Array1::zeros(n);
         (0..trials).for_each(|trial| {
             let cur_noise_imf_resid = &all_noise_emd[trial];
@@ -1059,7 +1109,7 @@ fn ceemdan_impl(val: ArrayView1<f64>, max_imf: Option<usize>) -> RsEMDOut {
         all_cimfs.push(imf);
         prev_res = local_mean.clone();
     }
-    // let resid =
+    // dbg!(all_cimfs.len());
     let mut imf_arr = Array2::zeros((all_cimfs.len(), n));
     for (i, cur_imf) in all_cimfs.into_iter().enumerate() {
         let row = imf_arr.slice_mut(s![i, ..]);
@@ -1071,13 +1121,18 @@ fn ceemdan_impl(val: ArrayView1<f64>, max_imf: Option<usize>) -> RsEMDOut {
 }
 
 #[pyfunction]
-#[pyo3(signature = (val, max_imf=None))]
-fn ceemdan<'py>(py: Python<'py>, val: PyReadonlyArray1<'py, f64>, max_imf: Option<usize>) {
+#[pyo3(signature = (val, trials=100, max_imf=None))]
+fn ceemdan<'py>(
+    py: Python<'py>,
+    val: PyReadonlyArray1<'py, f64>,
+    trials: usize,
+    max_imf: Option<usize>,
+) -> PyEMDOut<'py> {
     // PyEMDOut<'py>
     let val = val.as_array();
-    py.allow_threads(|| ceemdan_impl(val, max_imf));
-    // let (imfs, resid) = py.allow_threads(|| ceemdan_impl(val, max_imf));
-    // (imfs.to_pyarray(py), resid.to_pyarray(py))
+    // py.allow_threads(|| ceemdan_impl(val, max_imf));
+    let (imfs, resid) = py.allow_threads(|| ceemdan_impl(val, trials, max_imf));
+    (imfs.to_pyarray(py), resid.to_pyarray(py))
 }
 
 /// A Python module implemented in Rust.
@@ -1123,13 +1178,13 @@ mod test {
     }
     #[test]
     fn test_bisect() {
-        assert_eq!(bisect(&[0.0, 1.0, 2.0], &1.0), 2);
-        assert_eq!(bisect(&[0.0, 1.0, 2.0], &0.99), 1);
-        assert_eq!(bisect(&[0.0, 1.0, 2.0], &0.0), 1);
-        assert_eq!(bisect(&[0.0, 1.0, 2.0], &1.99), 2);
-        assert_eq!(bisect(&[0.0, 1.0, 2.0], &2.0), 3);
-        assert_eq!(bisect(&[0.0, 1.0, 2.0], &3.0), 3);
-        assert_eq!(bisect(&[0.0, 1.0, 2.0], &-2.0), 0);
+        assert_eq!(find_ind(&[0.0, 1.0, 2.0], &1.0), 2);
+        assert_eq!(find_ind(&[0.0, 1.0, 2.0], &0.99), 1);
+        assert_eq!(find_ind(&[0.0, 1.0, 2.0], &0.0), 1);
+        assert_eq!(find_ind(&[0.0, 1.0, 2.0], &1.99), 2);
+        assert_eq!(find_ind(&[0.0, 1.0, 2.0], &2.0), 3);
+        assert_eq!(find_ind(&[0.0, 1.0, 2.0], &3.0), 3);
+        assert_eq!(find_ind(&[0.0, 1.0, 2.0], &-2.0), 0);
     }
     #[test]
     fn test_zc() {
