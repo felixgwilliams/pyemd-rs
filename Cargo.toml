@@ -12,13 +12,21 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow = "1.0.97"
 getrandom = "0.3.3"
-ndarray-linalg = { version = "0.17.0", features = ["intel-mkl-static"] }
 numpy = "0.25"
 pyo3 = { version = "0.25", features = ["anyhow"] }
 rand = "0.9.1"
 rand_mt = "5.0.0"
 rayon = "1.10.0"
 thiserror = "2.0.12"
+
+[target.'cfg(target_arch = "x86")'.dependencies]
+ndarray-linalg = { version = "0.17.0", features = ["openblas-static"] }
+
+[target.'cfg(all(target_arch = "aarch64", target_os = "linux"))'.dependencies]
+ndarray-linalg = { version = "0.17.0", features = ["openblas-static"] }
+
+[target.'cfg(any(target_arch = "x86_64", target_os = "windows", target_os = "macos"))'.dependencies]
+ndarray-linalg = { version = "0.17.0", features = ["intel-mkl-static"] }
 
 # [profile.release]
 # debug = "line-tables-only"
