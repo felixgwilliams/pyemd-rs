@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning].
 
 - /
 
+## 0.1.1 - 2025-06-22
+
+- remove dependency on `ndarray-linalg` for better performance and more platform support
+
 ## 0.1.0 - 2025-06-22
 
 - initial release
