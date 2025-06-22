@@ -9,11 +9,6 @@ use rand_mt::Mt;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::{borrow::Cow, collections::BinaryHeap, sync::Mutex};
 
-/// Formats the sum of two numbers as string.
-#[pyfunction]
-fn sum_as_string(a: usize, b: usize) -> PyResult<String> {
-    Ok((a + b).to_string())
-}
 #[derive(Debug, Clone)]
 #[pyclass]
 struct FindExtremaOutput {
@@ -1066,6 +1061,13 @@ fn c_end_condition(
     false
 }
 
+// x += y*c without more allocations
+fn add_to_vec(x: &mut ArrayViewMut1<f64>, y: ArrayView1<f64>, c: f64) {
+    let n = x.len();
+    for i in 0..n {
+        x[i] += y[i] * c;
+    }
+}
 fn ceemdan_impl(
     val: ArrayView1<f64>,
     trials: usize,
@@ -1104,24 +1106,39 @@ fn ceemdan_impl(
             break;
         }
         let beta = prev_res.std(0.0) * C_EPSILON;
-        let mut local_mean = Array1::zeros(n);
-        (0..trials).for_each(|trial| {
+
+        let local_mean = Mutex::new(Array1::<f64>::zeros(n));
+
+        (0..trials).into_par_iter().for_each(|trial| {
             let cur_noise_imf_resid = &all_noise_emd[trial];
             let n_noise_imf = cur_noise_imf_resid.0.shape()[0];
             let mut res = prev_res.clone();
 
             if n_noise_imf == all_cimfs.len() {
-                res += &(&cur_noise_imf_resid.1 * beta);
+                // res += &(&cur_noise_imf_resid.1 * beta);
+                add_to_vec(&mut res.view_mut(), cur_noise_imf_resid.1.view(), beta);
             } else if n_noise_imf > all_cimfs.len() {
-                res += &(&cur_noise_imf_resid.0.row(all_cimfs.len()) * beta);
+                // res += &(&cur_noise_imf_resid.0.row(all_cimfs.len()) * beta);
+                add_to_vec(
+                    &mut res.view_mut(),
+                    cur_noise_imf_resid.0.row(all_cimfs.len()),
+                    beta,
+                );
             }
             let (_, resid) = emd_impl(res.view(), Some(1));
-            local_mean += &(&resid / (trials as f64));
+            // the threads need to lock the local mean array to update it. That's fine because it is
+            // much quicker than calculating the emd
+            let mut lm = local_mean.lock().unwrap();
+            for i in 0..lm.len() {
+                lm[i] += resid[i] / (trials as f64);
+            }
         });
+        let local_mean = local_mean.into_inner().unwrap();
+
         let imf = &prev_res - &local_mean;
         scaled_residue -= &imf;
         all_cimfs.push(imf);
-        prev_res = local_mean.clone();
+        prev_res = local_mean.into_owned();
     }
     // dbg!(all_cimfs.len());
     let mut imf_arr = Array2::zeros((all_cimfs.len(), n));
@@ -1153,7 +1170,6 @@ fn ceemdan<'py>(
 /// A Python module implemented in Rust.
 #[pymodule]
 fn _pyemd_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(sum_as_string, m)?)?;
     m.add_function(wrap_pyfunction!(find_extrema_simple, m)?)?;
     m.add_function(wrap_pyfunction!(find_extrema_simple_pos, m)?)?;
     m.add_function(wrap_pyfunction!(prepare_points_simple, m)?)?;

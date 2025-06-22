@@ -3,8 +3,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from PyEMD.EMD import EMD
-from pyemd_rs._pyemd_rs import cubic_spline, emd, find_extrema_simple, prepare_points_simple
 from tqdm import trange
+
+from pyemd_rs import emd
+from pyemd_rs._testing import cubic_spline, find_extrema_simple, prepare_points_simple
 
 from . import long_zc, zc_arrays
 
@@ -360,5 +362,5 @@ def test_emd(arr_id):
     emd_obj = EMD()
     emd_obj.emd(arr)
     imf, resid = emd(arr)
-    assert np.allclose(imf, emd_obj.imfs)
-    assert np.allclose(resid, emd_obj.residue)
+    assert np.allclose(imf, emd_obj.imfs)  # pyright: ignore[reportArgumentType]
+    assert np.allclose(resid, emd_obj.residue)  # pyright: ignore[reportArgumentType]

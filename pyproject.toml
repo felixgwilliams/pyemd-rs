@@ -50,6 +50,7 @@ ignore = ["COM", "ERA", "ISC001", "PTH", "TRY003", "TD", "FIX", "PYI021"]
 
 [tool.ruff.lint.isort]
 required-imports = ["from __future__ import annotations"]
+known-first-party = ["pyemd_rs"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
