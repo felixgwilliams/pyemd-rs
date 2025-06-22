@@ -13,8 +13,8 @@ crate-type = ["cdylib"]
 anyhow = "1.0.97"
 getrandom = "0.3.3"
 ndarray-linalg = { version = "0.17.0", features = ["intel-mkl-static"] }
-numpy = "0.24"
-pyo3 = { version = "0.24", features = ["anyhow"] }
+numpy = "0.25"
+pyo3 = { version = "0.25", features = ["anyhow"] }
 rand = "0.9.1"
 rand_mt = "5.0.0"
 rayon = "1.10.0"

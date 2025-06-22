@@ -11,9 +11,7 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
-dependencies = [
-    "numpy>1.24",
-]
+dependencies = ["numpy>1.24"]
 license = { file = "LICENSE" }
 [tool.maturin]
 features = ["pyo3/extension-module"]
@@ -21,9 +19,6 @@ python-source = "python"
 module-name = "pyemd_rs._pyemd_rs"
 
 [dependency-groups]
-build = [
-    "maturin[patchelf]>=1.8.3",
-]
 dev = [
     "emd-signal>=1.6.4",
     "ipython>=8.18.1",
@@ -45,7 +40,16 @@ select = ["ALL"]
 ignore = ["COM", "ERA", "ISC001", "PTH", "TRY003", "TD", "FIX", "PYI021"]
 
 [tool.ruff.lint.per-file-ignores]
-"!python/**" = ["ANN", "D",  "PLR2004", "T20", "EM", "PLR0913", "FBT003", "INP001"]
+"!python/**" = [
+    "ANN",
+    "D",
+    "PLR2004",
+    "T20",
+    "EM",
+    "PLR0913",
+    "FBT003",
+    "INP001",
+]
 "tests/**.py" = ["S101"]
 
 [tool.ruff.lint.isort]
