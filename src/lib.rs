@@ -841,7 +841,6 @@ const C_EPSILON: f64 = 0.005;
 const NOISE_SCALE: f64 = 1.0;
 const C_RANGE_THRESH: f64 = 0.01;
 const C_TOTAL_POWER_THRESH: f64 = 0.05;
-const C_SEED: u32 = 123;
 const C_MAX_IMF: usize = 100;
 
 fn check_imf(
@@ -877,6 +876,9 @@ fn check_imf(
         return true;
     }
     false
+}
+fn get_random_seed() -> u32 {
+    getrandom::u32().expect("Failed to generate seed")
 }
 
 type PyEMDOut<'py> = (Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<f64>>);
@@ -915,7 +917,8 @@ impl CachedGauss for DoubleMt {
     }
 }
 impl DoubleMt {
-    fn new(seed: u32) -> Self {
+    fn new(seed: Option<u32>) -> Self {
+        let seed = seed.unwrap_or_else(get_random_seed);
         DoubleMt {
             mt: Mt::new(seed),
             cached_gauss: None,
@@ -973,16 +976,22 @@ fn rng_norm_array<R: RngCore + CachedGauss, Sh: ShapeBuilder<Dim = D>, D: Dimens
     Array::from_shape_vec(shape, rng_norm_vec(rng, n, sig)).unwrap()
 }
 fn normal_mt_impl<Sh: ShapeBuilder<Dim = D>, D: Dimension>(
-    seed: u32,
+    seed: Option<u32>,
     size: Sh,
     scale: f64,
 ) -> Array<f64, D> {
     // let mut out: Array<f64, D> = Array::default(size);
     let mut rng = DoubleMt::new(seed);
+
     rng_norm_array(&mut rng, size, scale)
 }
 #[pyfunction]
-fn normal_mt(py: Python<'_>, seed: u32, size: usize, scale: f64) -> Bound<'_, PyArray1<f64>> {
+fn normal_mt(
+    py: Python<'_>,
+    seed: Option<u32>,
+    size: usize,
+    scale: f64,
+) -> Bound<'_, PyArray1<f64>> {
     let arr = py.allow_threads(|| normal_mt_impl(seed, size, scale));
     arr.to_pyarray(py)
 }
@@ -1057,14 +1066,19 @@ fn c_end_condition(
     false
 }
 
-fn ceemdan_impl(val: ArrayView1<f64>, trials: usize, max_imf: Option<usize>) -> RsEMDOut {
+fn ceemdan_impl(
+    val: ArrayView1<f64>,
+    trials: usize,
+    max_imf: Option<usize>,
+    seed: Option<u32>,
+) -> RsEMDOut {
     let scale_s = val.std(0.0);
     let val = &val / scale_s;
     let n = val.len();
     // dbg!(trials);
     // let trials = C_TRIALS;
 
-    let all_noise = normal_mt_impl(C_SEED, (n, trials), NOISE_SCALE);
+    let all_noise = normal_mt_impl(seed, (n, trials), NOISE_SCALE);
     // dbg!(&all_noise);
     let all_noise_emd: Vec<_> = (0..trials)
         .into_par_iter()
@@ -1121,17 +1135,18 @@ fn ceemdan_impl(val: ArrayView1<f64>, trials: usize, max_imf: Option<usize>) -> 
 }
 
 #[pyfunction]
-#[pyo3(signature = (val, trials=100, max_imf=None))]
+#[pyo3(signature = (val, trials=100, max_imf=None, seed=None))]
 fn ceemdan<'py>(
     py: Python<'py>,
     val: PyReadonlyArray1<'py, f64>,
     trials: usize,
     max_imf: Option<usize>,
+    seed: Option<u32>,
 ) -> PyEMDOut<'py> {
     // PyEMDOut<'py>
     let val = val.as_array();
     // py.allow_threads(|| ceemdan_impl(val, max_imf));
-    let (imfs, resid) = py.allow_threads(|| ceemdan_impl(val, trials, max_imf));
+    let (imfs, resid) = py.allow_threads(|| ceemdan_impl(val, trials, max_imf, seed));
     (imfs.to_pyarray(py), resid.to_pyarray(py))
 }
 

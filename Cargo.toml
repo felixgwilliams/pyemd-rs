@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = "1.0.97"
+getrandom = "0.3.3"
 ndarray-linalg = { version = "0.17.0", features = ["intel-mkl-static"] }
 numpy = "0.24"
 pyo3 = { version = "0.24", features = ["anyhow"] }
