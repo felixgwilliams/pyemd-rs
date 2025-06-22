@@ -1,4 +1,3 @@
-use ndarray_linalg::{SolveTridiagonal, Tridiagonal};
 use numpy::{
     ndarray::{prelude::*, Dimension, Shape},
     PyArray1, PyArray2, PyReadonlyArray1, ToPyArray,
@@ -547,6 +546,29 @@ where
         None => Cow::Owned(x.to_vec()),
     }
 }
+
+fn solve_tridiagonal(dl: &[f64], d: &[f64], du: &[f64], y: ArrayView1<f64>) -> Array1<f64> {
+    let n = d.len();
+    debug_assert!(y.len() == n);
+    debug_assert!(dl.len() == n - 1);
+    debug_assert!(du.len() == n - 1);
+
+    let mut scratch = Array1::<f64>::zeros(n);
+    let mut x = y.to_owned();
+
+    scratch[0] = du[0] / d[0];
+    x[0] /= d[0];
+    for ix in 1..n {
+        if ix < n - 1 {
+            scratch[ix] = du[ix] / (d[ix] - dl[ix - 1] * scratch[ix - 1]);
+        }
+        x[ix] = (x[ix] - dl[ix - 1] * x[ix - 1]) / (d[ix] - dl[ix - 1] * scratch[ix - 1]);
+    }
+    for ix in (0..(n - 1)).rev() {
+        x[ix] -= scratch[ix] * x[ix + 1];
+    }
+    x
+}
 fn cubic_spline_3pts(
     x: ArrayView1<f64>,
     y: ArrayView1<f64>,
@@ -558,16 +580,17 @@ fn cubic_spline_3pts(
     let rdx2 = 1.0 / dx2;
     let dy1 = y[1] - y[0];
     let dy2 = y[2] - y[1];
-    let mat = Tridiagonal {
-        l: ndarray_linalg::MatrixLayout::C { row: 3, lda: 3 },
-        d: vec![2.0 * dx1, 2.0 * (rdx1 + rdx2), 2.0 * dx2],
-        dl: vec![rdx1, rdx2],
-        du: vec![rdx1, rdx2],
-    };
+
+    let d = vec![2.0 * dx1, 2.0 * (rdx1 + rdx2), 2.0 * dx2];
+    let dl = vec![rdx1, rdx2];
+    let du = vec![rdx1, rdx2];
+
     let v1 = 3.0 * dy1 * rdx1 * rdx1;
     let v3 = 3.0 * dy2 * rdx2 * rdx2;
     let v = Array1::from_iter([v1, v1 + v3, v3]);
-    let s = mat.solve_tridiagonal(&v).unwrap();
+
+    // let s = mat.solve_tridiagonal(&v).unwrap();
+    let s = solve_tridiagonal(&dl, &d, &du, v.view());
     let a1 = s[0] * dx1 - dy1;
     let b1 = -s[1] * dx1 + dy1;
     let a2 = s[1] * dx2 - dy2;
@@ -631,16 +654,7 @@ fn cubic_spline_large(
         + (2.0 * dl[n - 2] + dx[n - 2]) * dx[n - 3] * slope[n - 2])
         / dl[n - 2];
 
-    let mat = Tridiagonal {
-        l: ndarray_linalg::MatrixLayout::C {
-            row: n as i32,
-            lda: n as i32,
-        },
-        d,
-        dl,
-        du,
-    };
-    let s = mat.solve_tridiagonal(&b).unwrap();
+    let s = solve_tridiagonal(&dl, &d, &du, b.view());
 
     // dbg!(&s);
     let mut c = Array2::zeros((4, n - 1));
