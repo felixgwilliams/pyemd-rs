@@ -52,6 +52,9 @@ def ceemdan(
     trials: int = 100,
     max_imf: int | None = None,
     seed: int | None = None,
+    epsilon: float = 0.005,
+    *,
+    parallel: bool = True,
 ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     """Calculate the IMFs and residual of an array via CEEMDAN.
 
@@ -62,6 +65,8 @@ def ceemdan(
             Defaults to None.
         seed (int | None, optional): Random seed for generating the noise. If not given, a seed
             will be generated using the getrandom crate. Defaults to None.
+        epsilon (float, optional): Scale for random noise added to input. Defaults to 0.005
+        parallel (bool, optional): Whether to use rayon for parralelising code. Defaults to True
 
     Returns:
         tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]: 2D array of IMFs with

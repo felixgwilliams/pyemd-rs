@@ -35,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: 
+        with:
           python-version: 3.9
       - name: Set up uv
         run: curl -LsSf https://astral.sh/uv/${{ env.UV_VERSION }}/install.sh | sh
@@ -43,7 +43,7 @@ jobs:
         run: uv sync --all-groups
       - name: run pytest
         run: uv run pytest tests
-        
+
 
   linux:
     runs-on: ${{ matrix.platform.runner }}

@@ -846,7 +846,6 @@ const TOTAL_POWER_THRESH: f64 = 0.005;
 
 //ceemdan parameters
 // const C_TRIALS: usize = 100;
-const C_EPSILON: f64 = 0.005;
 const NOISE_SCALE: f64 = 1.0;
 const C_RANGE_THRESH: f64 = 0.01;
 const C_TOTAL_POWER_THRESH: f64 = 0.05;
@@ -1014,18 +1013,29 @@ impl<'a, D: Dimension> Viewable<'a, D> for Vec<Array<f64, D>> {
     }
 }
 
-fn _eemd(val: ArrayView1<f64>, trials: usize, noise_emd_1: &[ArrayView1<f64>]) -> Array1<f64> {
+fn _eemd(
+    val: ArrayView1<f64>,
+    trials: usize,
+    noise_emd_1: &[ArrayView1<f64>],
+    epsilon: f64,
+    parallel: bool,
+) -> Array1<f64> {
     let n = val.len();
 
     let out = Mutex::new(Array1::zeros(n));
-
-    (0..trials).into_par_iter().for_each(|t| {
-        let cur_emd = emd_impl((&val + (C_EPSILON * &noise_emd_1[t])).view(), Some(1));
+    let noise_closure = |t| {
+        let val_noise: Array1<f64> = &val + (epsilon * &noise_emd_1[t]);
+        let cur_emd = emd_impl(val_noise.view(), Some(1));
         let mut out = out.lock().unwrap();
         for i in 0..n {
             out[i] += cur_emd.0.row(0)[i] / (trials as f64);
         }
-    });
+    };
+    if parallel {
+        (0..trials).into_par_iter().for_each(noise_closure);
+    } else {
+        (0..trials).for_each(noise_closure);
+    }
 
     out.into_inner().unwrap()
 }
@@ -1082,11 +1092,28 @@ fn add_to_vec(x: &mut ArrayViewMut1<f64>, y: ArrayView1<f64>, c: f64) {
         x[i] += y[i] * c;
     }
 }
+
+fn make_noise_emd(seed: Option<u32>, trials: usize, n: usize, parallel: bool) -> Vec<RsEMDOut> {
+    let all_noise = normal_mt_impl(seed, (n, trials), NOISE_SCALE);
+
+    let noise_closure = |i| {
+        let (imfs, resid) = emd_impl(all_noise.column(i), None);
+        let imf_sd = imfs.row(0).std(0.0);
+        (imfs / imf_sd, resid / imf_sd)
+    };
+    if parallel {
+        (0..trials).into_par_iter().map(noise_closure).collect()
+    } else {
+        (0..trials).map(noise_closure).collect()
+    }
+}
 fn ceemdan_impl(
     val: ArrayView1<f64>,
     trials: usize,
     max_imf: Option<usize>,
     seed: Option<u32>,
+    epsilon: f64,
+    parallel: bool,
 ) -> RsEMDOut {
     let scale_s = val.std(0.0);
     let val = &val / scale_s;
@@ -1094,21 +1121,14 @@ fn ceemdan_impl(
     // dbg!(trials);
     // let trials = C_TRIALS;
 
-    let all_noise = normal_mt_impl(seed, (n, trials), NOISE_SCALE);
     // dbg!(&all_noise);
-    let all_noise_emd: Vec<_> = (0..trials)
-        .into_par_iter()
-        .map(|i| {
-            let (imfs, resid) = emd_impl(all_noise.column(i), None);
-            let imf_sd = imfs.row(0).std(0.0);
-            (imfs / imf_sd, resid / imf_sd)
-        })
-        .collect();
+
+    let all_noise_emd: Vec<RsEMDOut> = make_noise_emd(seed, trials, n, parallel);
     // dbg!(&all_noise_emd);
 
     let noise_emd_1: Vec<_> = all_noise_emd.iter().map(|x| x.0.row(0)).collect();
 
-    let mut all_cimfs = vec![_eemd(val.view(), trials, &noise_emd_1)];
+    let mut all_cimfs = vec![_eemd(val.view(), trials, &noise_emd_1, epsilon, parallel)];
     // dbg!(&all_cimfs[0]);
 
     let mut prev_res = &val - &all_cimfs[0];
@@ -1119,12 +1139,11 @@ fn ceemdan_impl(
         if c_end_condition(scaled_residue.view(), &all_cimfs.views(), max_imf, i) {
             break;
         }
-        let beta = prev_res.std(0.0) * C_EPSILON;
+        let beta = prev_res.std(0.0) * epsilon;
 
         let local_mean = Mutex::new(Array1::<f64>::zeros(n));
-
-        (0..trials).into_par_iter().for_each(|trial| {
-            let cur_noise_imf_resid = &all_noise_emd[trial];
+        let trial_closure = |trial| {
+            let cur_noise_imf_resid: &RsEMDOut = &all_noise_emd[trial];
             let n_noise_imf = cur_noise_imf_resid.0.shape()[0];
             let mut res = prev_res.clone();
 
@@ -1146,7 +1165,12 @@ fn ceemdan_impl(
             for i in 0..lm.len() {
                 lm[i] += resid[i] / (trials as f64);
             }
-        });
+        };
+        if parallel {
+            (0..trials).into_par_iter().for_each(trial_closure);
+        } else {
+            (0..trials).for_each(trial_closure);
+        }
         let local_mean = local_mean.into_inner().unwrap();
 
         let imf = &prev_res - &local_mean;
@@ -1166,18 +1190,21 @@ fn ceemdan_impl(
 }
 
 #[pyfunction]
-#[pyo3(signature = (val, trials=100, max_imf=None, seed=None))]
+#[pyo3(signature = (val, trials=100, max_imf=None, seed=None, epsilon=0.005, *, parallel=true))]
 fn ceemdan<'py>(
     py: Python<'py>,
     val: PyReadonlyArray1<'py, f64>,
     trials: usize,
     max_imf: Option<usize>,
     seed: Option<u32>,
+    epsilon: f64,
+    parallel: bool,
 ) -> PyEMDOut<'py> {
     // PyEMDOut<'py>
     let val = val.as_array();
     // py.allow_threads(|| ceemdan_impl(val, max_imf));
-    let (imfs, resid) = py.allow_threads(|| ceemdan_impl(val, trials, max_imf, seed));
+    let (imfs, resid) =
+        py.allow_threads(|| ceemdan_impl(val, trials, max_imf, seed, epsilon, parallel));
     (imfs.to_pyarray(py), resid.to_pyarray(py))
 }
 
