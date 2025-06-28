@@ -1,7 +1,7 @@
 # pyemd-rs
 
 [![License:MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-![PyPI - Version](https://img.shields.io/pypi/v/pyemd-rs)
+[![PyPI - Version](https://img.shields.io/pypi/v/pyemd-rs)](https://pypi.org/project/pyemd-rs/)
 
 This library attempts to reimplement the [PyEMD](https://github.com/laszukdawid/PyEMD) library in Rust.
 
