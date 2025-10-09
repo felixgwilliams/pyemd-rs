@@ -66,7 +66,7 @@ def ceemdan(
         seed (int | None, optional): Random seed for generating the noise. If not given, a seed
             will be generated using the getrandom crate. Defaults to None.
         epsilon (float, optional): Scale for random noise added to input. Defaults to 0.005
-        parallel (bool, optional): Whether to use rayon for parralelising code. Defaults to True
+        parallel (bool, optional): Whether to use rayon for parallelising code. Defaults to True
 
     Returns:
         tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]: 2D array of IMFs with
