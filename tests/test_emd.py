@@ -15,7 +15,7 @@ FindExtremaOutput2 = tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.nd
 
 @pytest.mark.parametrize("arr_id", zc_arrays.items(), ids=zc_arrays.keys())
 def test_find_extrema(arr_id):
-    id_, arr = arr_id
+    _id, arr = arr_id
 
     maxpos, _, minpos, _, zc = EMD._find_extrema_simple(np.arange(len(arr)), arr)  # noqa: SLF001
     feo = find_extrema_simple(arr)
@@ -30,7 +30,7 @@ def test_prepare_points(arr_id):
     # emd = EMD()
     pos = np.arange(len(arr))
 
-    maxpos, maxval, minpos, minval, zc = EMD._find_extrema_simple(pos, arr)  # noqa: SLF001
+    maxpos, _maxval, minpos, _minval, _zc = EMD._find_extrema_simple(pos, arr)  # noqa: SLF001
     if len(maxpos) + len(minpos) < 3:
         pytest.skip()
 
@@ -59,7 +59,7 @@ def test_prepare_points2():
     for _i in trange(10000):
         arr = np.round(gen.random(size=20) * 100) - 50
         pos = np.arange(len(arr))
-        maxpos, maxval, minpos, minval, zc = EMD._find_extrema_simple(pos, arr)  # noqa: SLF001
+        maxpos, _maxval, minpos, _minval, zc = EMD._find_extrema_simple(pos, arr)  # noqa: SLF001
         feo = find_extrema_simple(arr)
         assert np.array_equal(feo.max_pos, maxpos)
         assert np.array_equal(feo.min_pos, minpos)
@@ -91,11 +91,11 @@ def test_prepare_points2():
 
 @pytest.mark.parametrize("arr_id", long_zc.items(), ids=long_zc.keys())
 def test_cubic_spline(arr_id):
-    id_, arr = arr_id
+    _id, arr = arr_id
     emd = EMD()
     pos = np.arange(len(arr), dtype=np.intp)
 
-    maxpos, maxval, minpos, minval, zc = EMD._find_extrema_simple(pos, arr)  # noqa: SLF001
+    maxpos, _maxval, minpos, _minval, _zc = EMD._find_extrema_simple(pos, arr)  # noqa: SLF001
     if len(maxpos) + len(minpos) < 3:
         pytest.skip()
 
@@ -131,7 +131,7 @@ spline_inputs = {
 
 @pytest.mark.parametrize("cube_arr_id", spline_inputs.items(), ids=spline_inputs.keys())
 def test_cubic_spline2(cube_arr_id):
-    id_, arr = cube_arr_id
+    _id, arr = cube_arr_id
     emd = EMD()
     n = 20
     pos = np.arange(n, dtype=np.intp)
@@ -145,7 +145,7 @@ def test_cubic_spline2(cube_arr_id):
 
 @pytest.mark.parametrize("arr_id", long_zc.items(), ids=long_zc.keys())
 def test_emd(arr_id):
-    id_, arr = arr_id
+    _id, arr = arr_id
     emd_obj = EMD()
     emd_obj.emd(arr)
     imf, resid = emd(arr)
