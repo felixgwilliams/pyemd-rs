@@ -176,7 +176,7 @@ fn find_extrema_simple(py: Python, val: PyReadonlyArray1<f64>) -> FindExtremaOut
     let val = val.as_array();
 
     // let out = find_extrema_simple_impl(val, pos);
-    py.allow_threads(|| find_extrema_simple_impl(val))
+    py.detach(|| find_extrema_simple_impl(val))
 }
 
 #[pyfunction]
@@ -187,7 +187,7 @@ fn find_extrema_simple_pos<'py>(
     let val = val.as_array();
 
     let (minpos, maxpos) =
-        py.allow_threads(|| find_extrema_pos_impl(val.as_standard_layout().as_slice().unwrap()));
+        py.detach(|| find_extrema_pos_impl(val.as_standard_layout().as_slice().unwrap()));
     // let out = find_extrema_simple_impl(val, pos);
     (
         PyArray1::from_vec(py, minpos),
@@ -519,15 +519,14 @@ fn prepare_points_simple<'py>(
     let val = val.as_array();
     let min_pos = min_pos.as_array();
     let max_pos = max_pos.as_array();
-    let (min_extrema_pos, min_extrema_val, max_extrema_pos, max_extrema_val) =
-        py.allow_threads(|| {
-            prepare_points_simple_impl(
-                val.as_standard_layout().as_slice().unwrap(),
-                min_pos.as_standard_layout().as_slice().unwrap(),
-                max_pos.as_standard_layout().as_slice().unwrap(),
-                nsymb,
-            )
-        });
+    let (min_extrema_pos, min_extrema_val, max_extrema_pos, max_extrema_val) = py.detach(|| {
+        prepare_points_simple_impl(
+            val.as_standard_layout().as_slice().unwrap(),
+            min_pos.as_standard_layout().as_slice().unwrap(),
+            max_pos.as_standard_layout().as_slice().unwrap(),
+            nsymb,
+        )
+    });
     Ok((
         PyArray1::from_vec(py, min_extrema_pos),
         PyArray1::from_vec(py, min_extrema_val),
@@ -719,7 +718,7 @@ fn cubic_spline<'py>(
 ) -> PyResult<SplineReturn<'py>> {
     let extrema_pos = extrema_pos.as_array();
     let extrema_val = extrema_val.as_array();
-    let (pos, interp) = py.allow_threads(|| cubic_spline_impl(n, extrema_pos, extrema_val));
+    let (pos, interp) = py.detach(|| cubic_spline_impl(n, extrema_pos, extrema_val));
     Ok((pos.to_pyarray(py), interp.to_pyarray(py)))
 }
 
@@ -900,7 +899,7 @@ fn emd<'py>(
     let val = val.as_array();
 
     // let out = find_extrema_simple_impl(val, pos);
-    let (imfs, resid) = py.allow_threads(|| emd_impl(val, max_imf));
+    let (imfs, resid) = py.detach(|| emd_impl(val, max_imf));
     (imfs.to_pyarray(py), resid.to_pyarray(py))
 }
 struct DoubleMt {
@@ -1000,7 +999,7 @@ fn normal_mt(
     size: usize,
     scale: f64,
 ) -> Bound<'_, PyArray1<f64>> {
-    let arr = py.allow_threads(|| normal_mt_impl(seed, size, scale));
+    let arr = py.detach(|| normal_mt_impl(seed, size, scale));
     arr.to_pyarray(py)
 }
 
@@ -1202,9 +1201,8 @@ fn ceemdan<'py>(
 ) -> PyEMDOut<'py> {
     // PyEMDOut<'py>
     let val = val.as_array();
-    // py.allow_threads(|| ceemdan_impl(val, max_imf));
-    let (imfs, resid) =
-        py.allow_threads(|| ceemdan_impl(val, trials, max_imf, seed, epsilon, parallel));
+    // py.detach(|| ceemdan_impl(val, max_imf));
+    let (imfs, resid) = py.detach(|| ceemdan_impl(val, trials, max_imf, seed, epsilon, parallel));
     (imfs.to_pyarray(py), resid.to_pyarray(py))
 }
 
