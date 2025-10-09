@@ -1,38 +1,41 @@
+[project]
+name = "pyemd-rs"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+classifiers = [
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+  "Programming Language :: Rust",
+]
+dependencies = ["numpy>1.24"]
+dynamic = ["version"]
+
+[dependency-groups]
+dev = [
+  "emd-signal>=1.6.4",
+  "ipykernel>=6.29.5",
+  "ipython>=8.18.1",
+  "matplotlib>=3.9.4",
+  "maturin>=1.8.3",
+  "polars>=1.30.0",
+  "pytest>=8.3.5",
+  "pytest-cov>=6.1.1",
+  "ruff>=0.11.4",
+  "tqdm>=4.67.1",
+]
+
 [build-system]
 requires = ["maturin>=1.8,<2.0", "numpy>=2"]
 build-backend = "maturin"
 
-[project]
-name = "pyemd-rs"
-requires-python = ">=3.9"
-classifiers = [
-    "Programming Language :: Rust",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
-]
-dynamic = ["version"]
-dependencies = ["numpy>1.24"]
-license = { file = "LICENSE" }
 [tool.maturin]
 features = ["pyo3/extension-module"]
-python-source = "python"
 module-name = "pyemd_rs._pyemd_rs"
-
-[dependency-groups]
-dev = [
-    "emd-signal>=1.6.4",
-    "ipython>=8.18.1",
-    "maturin>=1.8.3",
-    "polars>=1.30.0",
-    "pytest>=8.3.5",
-    "pytest-cov>=6.1.1",
-    "ruff>=0.11.4",
-    "tqdm>=4.67.1",
-]
+python-source = "python"
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py39"
 exclude = ["archive/*"]
 
 [tool.ruff.lint]
@@ -41,14 +44,14 @@ ignore = ["COM", "ERA", "ISC001", "PTH", "TRY003", "TD", "FIX", "PYI021"]
 
 [tool.ruff.lint.per-file-ignores]
 "!python/**" = [
-    "ANN",
-    "D",
-    "PLR2004",
-    "T20",
-    "EM",
-    "PLR0913",
-    "FBT003",
-    "INP001",
+  "ANN",
+  "D",
+  "PLR2004",
+  "T20",
+  "EM",
+  "PLR0913",
+  "FBT003",
+  "INP001",
 ]
 "tests/**.py" = ["S101"]
 

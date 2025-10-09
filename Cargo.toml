@@ -1,6 +1,6 @@
 [package]
 name = "pyemd-rs"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 license = "MIT"
 
@@ -12,11 +12,11 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow = "1.0.97"
 getrandom = "0.3.3"
-numpy = "0.25"
-pyo3 = { version = "0.25", features = ["anyhow"] }
-rand = "0.9.1"
+numpy = "0.26"
+pyo3 = { version = "0.26", features = ["anyhow"] }
+rand = "0.9"
 rand_mt = "5.0.0"
-rayon = "1.10.0"
+rayon = "1.11"
 thiserror = "2.0.12"
 
 # [profile.release]
