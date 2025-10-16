@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning].
 
 - /
 
+## 0.1.3 - 2025-10-16
+
+- Add support for python 3.13, 3.14
+- Upgrade PyO3 and rust-numpy versions
+
 ## 0.1.2 - 2025-06-24
 
 - Allow specifying noise scale in CEEMDAN [#2](https://github.com/felixgwilliams/pyemd-rs/issues/2)
