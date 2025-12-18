@@ -132,17 +132,15 @@ pub fn emd_impl(val: ArrayView1<f64>, max_imf: Option<usize>) -> RsEMDOut {
     (imf_arr, resid)
 }
 
-pub fn prepare_points_simple_impl(
+fn simple_get_l(
     val: &[f64],
     min_pos: &[usize],
     max_pos: &[usize],
     nbsym: usize,
-) -> (Vec<isize>, Vec<f64>, Vec<isize>, Vec<f64>) {
-    let end_min = min_pos.len();
-    let end_max = max_pos.len();
-    let n = val.len();
-
-    let (mut lmax, mut lmin, lsym): (Vec<_>, Vec<_>, usize) = if max_pos[0] < min_pos[0] {
+    end_min: usize,
+    end_max: usize,
+) -> (Vec<usize>, Vec<usize>, usize) {
+    if max_pos[0] < min_pos[0] {
         if val[0] > val[min_pos[0]] {
             // dbg!("l1");
             (
@@ -206,48 +204,42 @@ pub fn prepare_points_simple_impl(
                 .collect(),
             0,
         )
-    };
+    }
+}
+
+fn simple_get_r(
+    val: &[f64],
+    min_pos: &[usize],
+    max_pos: &[usize],
+    nbsym: usize,
+    end_min: usize,
+    end_max: usize,
+) -> (Vec<usize>, Vec<usize>, usize) {
+    let n = val.len();
     let end_chain = &[n - 1];
-    let (mut rmax, mut rmin, rsym): (Vec<_>, Vec<_>, usize) =
-        if max_pos[end_max - 1] < min_pos[end_min - 1] {
-            if val[n - 1] < val[max_pos[end_max - 1]] {
-                // dbg!("r1");
-                (
-                    max_pos[end_max.saturating_sub(nbsym)..]
-                        .iter()
-                        .copied()
-                        .rev()
-                        .collect(),
-                    min_pos[end_min.saturating_sub(nbsym + 1)..end_min - 1]
-                        .iter()
-                        .copied()
-                        .rev()
-                        .collect(),
-                    min_pos[end_min - 1],
-                )
-            } else {
-                // dbg!("r2");
-                (
-                    max_pos[(end_max + 1).saturating_sub(nbsym)..]
-                        .iter()
-                        .copied()
-                        .chain(end_chain.iter().copied())
-                        .rev()
-                        .collect(),
-                    min_pos[end_min.saturating_sub(nbsym)..]
-                        .iter()
-                        .copied()
-                        .rev()
-                        .collect(),
-                    n - 1,
-                )
-            }
-        } else if val[n - 1] > val[min_pos[end_min - 1]] {
-            // dbg!("r3");
+    if max_pos[end_max - 1] < min_pos[end_min - 1] {
+        if val[n - 1] < val[max_pos[end_max - 1]] {
+            // dbg!("r1");
             (
-                max_pos[end_max.saturating_sub(nbsym + 1)..end_max - 1]
+                max_pos[end_max.saturating_sub(nbsym)..]
                     .iter()
                     .copied()
+                    .rev()
+                    .collect(),
+                min_pos[end_min.saturating_sub(nbsym + 1)..end_min - 1]
+                    .iter()
+                    .copied()
+                    .rev()
+                    .collect(),
+                min_pos[end_min - 1],
+            )
+        } else {
+            // dbg!("r2");
+            (
+                max_pos[(end_max + 1).saturating_sub(nbsym)..]
+                    .iter()
+                    .copied()
+                    .chain(end_chain.iter().copied())
                     .rev()
                     .collect(),
                 min_pos[end_min.saturating_sub(nbsym)..]
@@ -255,25 +247,56 @@ pub fn prepare_points_simple_impl(
                     .copied()
                     .rev()
                     .collect(),
-                max_pos[end_max - 1],
-            )
-        } else {
-            // dbg!("r4");
-            (
-                max_pos[end_max.saturating_sub(nbsym)..]
-                    .iter()
-                    .copied()
-                    .rev()
-                    .collect(),
-                min_pos[(end_min + 1).saturating_sub(nbsym)..]
-                    .iter()
-                    .copied()
-                    .chain(end_chain.iter().copied())
-                    .rev()
-                    .collect(),
                 n - 1,
             )
-        };
+        }
+    } else if val[n - 1] > val[min_pos[end_min - 1]] {
+        // dbg!("r3");
+        (
+            max_pos[end_max.saturating_sub(nbsym + 1)..end_max - 1]
+                .iter()
+                .copied()
+                .rev()
+                .collect(),
+            min_pos[end_min.saturating_sub(nbsym)..]
+                .iter()
+                .copied()
+                .rev()
+                .collect(),
+            max_pos[end_max - 1],
+        )
+    } else {
+        // dbg!("r4");
+        (
+            max_pos[end_max.saturating_sub(nbsym)..]
+                .iter()
+                .copied()
+                .rev()
+                .collect(),
+            min_pos[(end_min + 1).saturating_sub(nbsym)..]
+                .iter()
+                .copied()
+                .chain(end_chain.iter().copied())
+                .rev()
+                .collect(),
+            n - 1,
+        )
+    }
+}
+pub fn prepare_points_simple_impl(
+    val: &[f64],
+    min_pos: &[usize],
+    max_pos: &[usize],
+    nbsym: usize,
+) -> (Vec<isize>, Vec<f64>, Vec<isize>, Vec<f64>) {
+    let end_min = min_pos.len();
+    let end_max = max_pos.len();
+    let n = val.len();
+
+    let (mut lmax, mut lmin, lsym): (Vec<_>, Vec<_>, usize) =
+        simple_get_l(val, min_pos, max_pos, nbsym, end_min, end_max);
+
+    let (mut rmax, mut rmin, rsym) = simple_get_r(val, min_pos, max_pos, nbsym, end_min, end_max);
     if lmin.is_empty() {
         lmin = min_pos.to_owned();
     }
