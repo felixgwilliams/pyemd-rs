@@ -12,8 +12,8 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow = "1.0.97"
 getrandom = "0.3.3"
-numpy = "0.26"
-pyo3 = { version = "0.26", features = ["anyhow"] }
+numpy = "0.27"
+pyo3 = { version = "0.27", features = ["anyhow"] }
 rand = "0.9"
 rand_mt = "5.0.0"
 rayon = "1.11"
