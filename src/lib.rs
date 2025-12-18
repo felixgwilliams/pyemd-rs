@@ -1,14 +1,19 @@
 use numpy::{PyArray1, PyArray2, PyReadonlyArray1, ToPyArray};
 use pyo3::prelude::*;
-mod _ceemdan;
+mod ceemdan_impl;
 mod common;
+mod emd_impl;
+mod ensemble;
+mod extremas;
+mod noise;
+mod splines;
 
 #[pyfunction]
-fn find_extrema_simple(py: Python, val: PyReadonlyArray1<f64>) -> common::FindExtremaOutput {
+fn find_extrema_simple(py: Python, val: PyReadonlyArray1<f64>) -> extremas::FindExtremaOutput {
     let val = val.as_array();
 
     // let out = find_extrema_simple_impl(val, pos);
-    py.detach(|| common::find_extrema_simple_impl(val))
+    py.detach(|| extremas::find_extrema_simple_impl(val))
 }
 
 #[pyfunction]
@@ -19,7 +24,7 @@ fn find_extrema_simple_pos<'py>(
     let val = val.as_array();
 
     let (minpos, maxpos) =
-        py.detach(|| common::find_extrema_pos_impl(val.as_standard_layout().as_slice().unwrap()));
+        py.detach(|| extremas::find_extrema_pos_impl(val.as_standard_layout().as_slice().unwrap()));
     // let out = find_extrema_simple_impl(val, pos);
     (
         PyArray1::from_vec(py, minpos),
@@ -45,7 +50,7 @@ fn prepare_points_simple<'py>(
     let min_pos = min_pos.as_array();
     let max_pos = max_pos.as_array();
     let (min_extrema_pos, min_extrema_val, max_extrema_pos, max_extrema_val) = py.detach(|| {
-        common::prepare_points_simple_impl(
+        emd_impl::prepare_points_simple_impl(
             val.as_standard_layout().as_slice().unwrap(),
             min_pos.as_standard_layout().as_slice().unwrap(),
             max_pos.as_standard_layout().as_slice().unwrap(),
@@ -70,7 +75,7 @@ fn cubic_spline<'py>(
 ) -> PyResult<SplineReturn<'py>> {
     let extrema_pos = extrema_pos.as_array();
     let extrema_val = extrema_val.as_array();
-    let (pos, interp) = py.detach(|| common::cubic_spline_impl(n, extrema_pos, extrema_val));
+    let (pos, interp) = py.detach(|| splines::cubic_spline_impl(n, extrema_pos, extrema_val));
     Ok((pos.to_pyarray(py), interp.to_pyarray(py)))
 }
 
@@ -85,7 +90,7 @@ fn emd<'py>(
     let val = val.as_array();
 
     // let out = find_extrema_simple_impl(val, pos);
-    let (imfs, resid) = py.detach(|| common::emd_impl(val, max_imf));
+    let (imfs, resid) = py.detach(|| emd_impl::emd_impl(val, max_imf));
     (imfs.to_pyarray(py), resid.to_pyarray(py))
 }
 
@@ -96,7 +101,7 @@ fn normal_mt(
     size: usize,
     scale: f64,
 ) -> Bound<'_, PyArray1<f64>> {
-    let arr = py.detach(|| _ceemdan::normal_mt_impl(seed, size, scale));
+    let arr = py.detach(|| noise::normal_mt_impl(seed, size, scale));
     arr.to_pyarray(py)
 }
 
@@ -115,7 +120,7 @@ fn ceemdan<'py>(
     let val = val.as_array();
     // py.detach(|| ceemdan_impl(val, max_imf));
     let (imfs, resid) =
-        py.detach(|| _ceemdan::ceemdan_impl(val, trials, max_imf, seed, epsilon, parallel));
+        py.detach(|| ceemdan_impl::ceemdan_impl(val, trials, max_imf, seed, epsilon, parallel));
     (imfs.to_pyarray(py), resid.to_pyarray(py))
 }
 
@@ -129,6 +134,6 @@ fn _pyemd_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(emd, m)?)?;
     m.add_function(wrap_pyfunction!(normal_mt, m)?)?;
     m.add_function(wrap_pyfunction!(ceemdan, m)?)?;
-    m.add_class::<common::FindExtremaOutput>()?;
+    m.add_class::<extremas::FindExtremaOutput>()?;
     Ok(())
 }
