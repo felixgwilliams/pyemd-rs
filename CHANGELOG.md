@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning].
 
 - Separate rust code into modules
 - Allow specifying various options in `emd` and `ceemdan`
+- Drop support for python 3.9
 
 ## 0.1.3 - 2025-10-16
 
