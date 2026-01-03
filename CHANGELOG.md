@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning].
 
 ## Unreleased
 
+- /
+
+## 0.1.4 2026-01-03
+
 - Separate rust code into modules
 - Allow specifying various options in `emd` and `ceemdan`
 
