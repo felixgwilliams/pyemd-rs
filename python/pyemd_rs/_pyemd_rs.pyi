@@ -148,3 +148,5 @@ def default_emd_opts() -> EmdOptsDict:
 
 def default_ceemdan_opts() -> CeemdanOptsDict:
     """Get Default CEEMDAN Options as dict."""
+
+__version__: str

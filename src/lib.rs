@@ -216,6 +216,7 @@ fn default_ceemdan_opts() -> CeemdanOpts {
 /// A Python module implemented in Rust.
 #[pymodule]
 fn _pyemd_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_function(wrap_pyfunction!(find_extrema_simple, m)?)?;
     m.add_function(wrap_pyfunction!(find_extrema_simple_pos, m)?)?;
     m.add_function(wrap_pyfunction!(prepare_points_simple, m)?)?;
