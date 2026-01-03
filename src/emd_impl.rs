@@ -3,21 +3,16 @@ use numpy::ndarray::prelude::*;
 use crate::{
     common::{get_cow_slice, RsEMDOut},
     extremas::find_extrema_simple_impl,
+    options::EmdOpts,
     splines::cubic_spline_impl,
 };
-const MAX_ITERATION: usize = 1000;
 
-// EMD parameters
-const SVAR_THRESH: f64 = 0.001;
-const ENERGY_RATIO_THRESH: f64 = 0.2;
-const STD_THRESH: f64 = 0.2;
-const RANGE_THRESH: f64 = 0.001;
-const TOTAL_POWER_THRESH: f64 = 0.005;
 fn check_imf(
     imf: ArrayView1<f64>,
     imf_old: ArrayView1<f64>,
     zmin: ArrayView1<f64>,
     zmax: ArrayView1<f64>,
+    emd_opts: &EmdOpts,
 ) -> bool {
     if zmin.iter().any(|z| *z > 0.0) || zmax.iter().any(|z| *z < 0.0) {
         return false;
@@ -30,7 +25,7 @@ fn check_imf(
     let svar = imf_diff_sqsum
         / (imf.iter().max_by(|a, b| a.total_cmp(b)).unwrap()
             - imf.iter().min_by(|a, b| a.total_cmp(b)).unwrap());
-    if svar < SVAR_THRESH {
+    if svar < emd_opts.svar_thresh {
         return true;
     }
     let std: f64 = imf_diff
@@ -38,23 +33,23 @@ fn check_imf(
         .zip(imf)
         .map(|(x, y)| *x * *x / *y / *y)
         .sum();
-    if std < STD_THRESH {
+    if std < emd_opts.std_thresh {
         return true;
     }
     let energy_ratio = imf_diff_sqsum / imf_old.map(|x| x * x).sum();
-    if energy_ratio < ENERGY_RATIO_THRESH {
+    if energy_ratio < emd_opts.energy_ratio_thresh {
         return true;
     }
     false
 }
-fn end_condition(resid: &ArrayView1<f64>) -> bool {
+fn end_condition(resid: &ArrayView1<f64>, emd_opts: &EmdOpts) -> bool {
     let resmax = resid.iter().max_by(|a, b| a.total_cmp(b)).unwrap();
     let resmin = resid.iter().min_by(|a, b| a.total_cmp(b)).unwrap();
     let ressum: f64 = resid.iter().map(|x| x.abs()).sum();
 
-    resmax - resmin < RANGE_THRESH || ressum < TOTAL_POWER_THRESH
+    resmax - resmin < emd_opts.range_thresh || ressum < emd_opts.total_power_thresh
 }
-pub fn emd_impl(val: ArrayView1<f64>, max_imf: Option<usize>) -> RsEMDOut {
+pub fn emd_impl(val: ArrayView1<f64>, max_imf: Option<usize>, emd_opts: &EmdOpts) -> RsEMDOut {
     let mut finished = false;
     let mut resid = val.to_owned();
     let n = val.len();
@@ -62,7 +57,7 @@ pub fn emd_impl(val: ArrayView1<f64>, max_imf: Option<usize>) -> RsEMDOut {
     let mut imf_is_residual = false;
     '_all_imf: while !finished {
         let mut imf = resid.to_owned();
-        'cur_imf: for _i in 1..MAX_ITERATION {
+        'cur_imf: for _i in 1..emd_opts.max_iteration {
             let imf_view = imf.view();
 
             let extremas = find_extrema_simple_impl(imf_view);
@@ -100,7 +95,7 @@ pub fn emd_impl(val: ArrayView1<f64>, max_imf: Option<usize>) -> RsEMDOut {
                 let ext_no2 = extremas2.max_pos.len() + extremas2.min_pos.len();
                 let n_zc2 = extremas2.zc_ind.len();
                 if ext_no2.abs_diff(n_zc2) < 2
-                    && check_imf(imf_view, imf_old.view(), zmin.view(), zmax.view())
+                    && check_imf(imf_view, imf_old.view(), zmin.view(), zmax.view(), emd_opts)
                 {
                     break 'cur_imf;
                 }
@@ -113,7 +108,7 @@ pub fn emd_impl(val: ArrayView1<f64>, max_imf: Option<usize>) -> RsEMDOut {
         }
         resid -= &imf;
         imfs.push(imf);
-        if max_imf.is_some_and(|m| m <= imfs.len()) || end_condition(&resid.view()) {
+        if max_imf.is_some_and(|m| m <= imfs.len()) || end_condition(&resid.view(), emd_opts) {
             // finished = true;
             break '_all_imf;
         }
