@@ -1,21 +1,24 @@
 use crate::ensemble::_eemd;
 use crate::noise::normal_mt_impl;
+use crate::options::{CeemdanOpts, EmdOpts};
 use crate::{common::RsEMDOut, emd_impl::emd_impl};
 use numpy::ndarray::{prelude::*, Dimension};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::sync::Mutex;
 //ceemdan parameters
-// const C_TRIALS: usize = 100;
-const NOISE_SCALE: f64 = 1.0;
-const C_RANGE_THRESH: f64 = 0.01;
-const C_TOTAL_POWER_THRESH: f64 = 0.05;
-const C_MAX_IMF: usize = 100;
 
-fn make_noise_emd(seed: Option<u32>, trials: usize, n: usize, parallel: bool) -> Vec<RsEMDOut> {
-    let all_noise = normal_mt_impl(seed, (n, trials), NOISE_SCALE);
+fn make_noise_emd(
+    seed: Option<u32>,
+    trials: usize,
+    n: usize,
+    parallel: bool,
+    emd_opts: &EmdOpts,
+    noise_scale: f64,
+) -> Vec<RsEMDOut> {
+    let all_noise = normal_mt_impl(seed, (n, trials), noise_scale);
 
     let noise_closure = |i| {
-        let (imfs, resid) = emd_impl(all_noise.column(i), None);
+        let (imfs, resid) = emd_impl(all_noise.column(i), None, emd_opts);
         let imf_sd = imfs.row(0).std(0.0);
         (imfs / imf_sd, resid / imf_sd)
     };
@@ -40,6 +43,7 @@ impl<'a, D: Dimension> Viewable<'a, D> for Vec<Array<f64, D>> {
         self.iter().map(|x| x.view()).collect()
     }
 }
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn ceemdan_impl(
     val: ArrayView1<f64>,
     trials: usize,
@@ -47,6 +51,8 @@ pub(crate) fn ceemdan_impl(
     seed: Option<u32>,
     epsilon: f64,
     parallel: bool,
+    emd_opts: &EmdOpts,
+    ceemdan_opts: &CeemdanOpts,
 ) -> RsEMDOut {
     let scale_s = val.std(0.0);
     let val = &val / scale_s;
@@ -56,20 +62,41 @@ pub(crate) fn ceemdan_impl(
 
     // dbg!(&all_noise);
 
-    let all_noise_emd: Vec<RsEMDOut> = make_noise_emd(seed, trials, n, parallel);
+    let all_noise_emd: Vec<RsEMDOut> = make_noise_emd(
+        seed,
+        trials,
+        n,
+        parallel,
+        emd_opts,
+        ceemdan_opts.noise_scale,
+    );
     // dbg!(&all_noise_emd);
 
     let noise_emd_1: Vec<_> = all_noise_emd.iter().map(|x| x.0.row(0)).collect();
 
-    let mut all_cimfs = vec![_eemd(val.view(), trials, &noise_emd_1, epsilon, parallel)];
+    let mut all_cimfs = vec![_eemd(
+        val.view(),
+        trials,
+        &noise_emd_1,
+        epsilon,
+        parallel,
+        emd_opts,
+    )];
     // dbg!(&all_cimfs[0]);
 
     let mut prev_res = &val - &all_cimfs[0];
     // let mut scaled_residue = all_cimfs[0].clone();
     let mut scaled_residue = prev_res.clone();
 
-    for i in 0..C_MAX_IMF {
-        if c_end_condition(scaled_residue.view(), &all_cimfs.views(), max_imf, i) {
+    for i in 0..ceemdan_opts.c_max_imf {
+        if c_end_condition(
+            scaled_residue.view(),
+            &all_cimfs.views(),
+            max_imf,
+            i,
+            emd_opts,
+            ceemdan_opts,
+        ) {
             break;
         }
         let beta = prev_res.std(0.0) * epsilon;
@@ -91,7 +118,7 @@ pub(crate) fn ceemdan_impl(
                     beta,
                 );
             }
-            let (_, resid) = emd_impl(res.view(), Some(1));
+            let (_, resid) = emd_impl(res.view(), Some(1), emd_opts);
             // the threads need to lock the local mean array to update it. That's fine because it is
             // much quicker than calculating the emd
             let mut lm = local_mean.lock().unwrap();
@@ -126,12 +153,14 @@ fn c_end_condition(
     all_cimfs: &[ArrayView1<f64>],
     max_imf: Option<usize>,
     i: usize,
+    emd_opts: &EmdOpts,
+    ceemdan_opts: &CeemdanOpts,
 ) -> bool {
     let n_imfs = all_cimfs.len();
     if max_imf.is_some_and(|mi| n_imfs >= mi) {
         return true;
     }
-    let (emd, _) = emd_impl(scaled_residue, Some(1));
+    let (emd, _) = emd_impl(scaled_residue, Some(1), emd_opts);
     if i == 0 {
         // dbg!(&scaled_residue);
         // dbg!(&emd);
@@ -152,14 +181,14 @@ fn c_end_condition(
     if i == 0 {
         // dbg!(residue_range);
     }
-    if residue_range < C_RANGE_THRESH {
+    if residue_range < ceemdan_opts.c_range_thresh {
         return true;
     }
     let residue_power = scaled_residue.iter().map(|x| x.abs()).sum::<f64>();
     if i == 0 {
         // dbg!(residue_power);
     }
-    if residue_power < C_TOTAL_POWER_THRESH {
+    if residue_power < ceemdan_opts.c_total_power_thresh {
         return true;
     }
 
