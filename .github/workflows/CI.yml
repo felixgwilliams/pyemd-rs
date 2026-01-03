@@ -26,7 +26,6 @@ permissions:
   contents: write
   id-token: write
 
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -45,7 +44,6 @@ jobs:
       - name: run pytest
         run: uv run pytest tests
 
-
   linux:
     runs-on: ${{ matrix.platform.runner }}
     needs: [test]
@@ -62,7 +60,12 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: '>=3.10 <3.15'
+          python-version: |
+            3.10
+            3.11
+            3.12
+            3.13
+            3.14
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -92,7 +95,12 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: '>=3.10 <3.15'
+          python-version: |
+            3.10
+            3.11
+            3.12
+            3.13
+            3.14
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -120,7 +128,12 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: '>=3.10 <3.15'
+          python-version: |
+            3.10
+            3.11
+            3.12
+            3.13
+            3.14
           architecture: ${{ matrix.platform.target }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
@@ -140,15 +153,20 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: macos-13
+          - runner: macos-15-intel
             target: x86_64
-          - runner: macos-14
+          - runner: macos-latest
             target: aarch64
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: '>=3.10 <3.15'
+          python-version: |
+            3.10
+            3.11
+            3.12
+            3.13
+            3.14
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
