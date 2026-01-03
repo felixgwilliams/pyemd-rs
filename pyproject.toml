@@ -1,16 +1,35 @@
 [project]
 name = "pyemd-rs"
+description = "PyEMD with Rust."
+readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 classifiers = [
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX",
+  "Operating System :: Unix",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: Implementation :: CPython",
-  "Programming Language :: Python :: Implementation :: PyPy",
   "Programming Language :: Rust",
+  "Topic :: Scientific/Engineering"
 ]
 dependencies = ["numpy>1.24"]
 dynamic = ["version"]
-readme = "README.md"
-description = "PyEMD with Rust."
+
+[project.urls]
+Changelog = "https://github.com/felixgwilliams/pyemd-rs/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/felixgwilliams/pyemd-rs"
+Homepage = "https://github.com/felixgwilliams/pyemd-rs"
+Repository = "https://github.com/felixgwilliams/pyemd-rs"
 
 [dependency-groups]
 dev = [
