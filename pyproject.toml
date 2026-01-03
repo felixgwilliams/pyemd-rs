@@ -9,6 +9,8 @@ classifiers = [
 ]
 dependencies = ["numpy>1.24"]
 dynamic = ["version"]
+readme = "README.md"
+description = "PyEMD with Rust."
 
 [dependency-groups]
 dev = [
