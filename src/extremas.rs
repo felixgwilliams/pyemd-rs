@@ -163,6 +163,40 @@ impl FindExtremaOutput {
         PyArray1::from_vec(py, self.zc_ind.clone())
     }
 }
+impl FindExtremaOutput {
+    pub fn get_lengths(&self) -> ExtremaLengths {
+        ExtremaLengths {
+            num_max: self.max_pos.len(),
+            num_min: self.min_pos.len(),
+            num_zc: self.zc_ind.len(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ExtremaLengths {
+    pub num_max: usize,
+    pub num_min: usize,
+    pub num_zc: usize,
+}
+impl Default for ExtremaLengths {
+    fn default() -> Self {
+        ExtremaLengths {
+            num_max: usize::MAX,
+            num_min: usize::MAX,
+            num_zc: usize::MAX,
+        }
+    }
+}
+impl ExtremaLengths {
+    pub fn num_extrema(&self) -> usize {
+        self.num_max + self.num_min
+    }
+    pub fn imf_condition(&self) -> bool {
+        let ext_no = self.num_extrema();
+        ext_no.abs_diff(self.num_zc) < 2
+    }
+}
 #[cfg(test)]
 mod test {
     use super::*;

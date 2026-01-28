@@ -57,12 +57,16 @@ pub fn emd_impl(val: ArrayView1<f64>, max_imf: Option<usize>, emd_opts: &EmdOpts
     let mut imf_is_residual = false;
     '_all_imf: while !finished {
         let mut imf = resid.to_owned();
+        let mut s_counter = 0;
+
         'cur_imf: for _i in 1..emd_opts.max_iteration {
             let imf_view = imf.view();
 
             let extremas = find_extrema_simple_impl(imf_view);
+            let extremas_lengths = extremas.get_lengths();
 
-            let ext_no = extremas.min_pos.len() + extremas.max_pos.len();
+            let ext_no = extremas_lengths.num_extrema();
+
             // let min_pos = Array1::from_iter(extremas.min_pos.iter().map(|x| *x as isize));
             // let max_pos = Array1::from_iter(extremas.max_pos.iter().map(|x| *x as isize));
             // let min_val = Array1::from_vec(extremas.min_val);
@@ -92,12 +96,27 @@ pub fn emd_impl(val: ArrayView1<f64>, max_imf: Option<usize>, emd_opts: &EmdOpts
                 let imf_view = imf.view();
 
                 let extremas2 = find_extrema_simple_impl(imf_view);
-                let ext_no2 = extremas2.max_pos.len() + extremas2.min_pos.len();
-                let n_zc2 = extremas2.zc_ind.len();
-                if ext_no2.abs_diff(n_zc2) < 2
-                    && check_imf(imf_view, imf_old.view(), zmin.view(), zmax.view(), emd_opts)
-                {
-                    break 'cur_imf;
+                let extremas_lengths2 = extremas2.get_lengths();
+                if true {
+                    // TODO: s_number active
+                    if true {
+                        //  TODO:check extrema diff
+                        s_counter += 1;
+                        if s_counter >= 0 //  TODO:replace with proper s_number check
+                            && extremas_lengths2.imf_condition()
+                            && check_imf(
+                                imf_view,
+                                imf_old.view(),
+                                zmin.view(),
+                                zmax.view(),
+                                emd_opts,
+                            )
+                        {
+                            break 'cur_imf;
+                        }
+                    } else {
+                        s_counter = 0;
+                    }
                 }
             } else {
                 finished = true;
