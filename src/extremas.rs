@@ -1,6 +1,6 @@
 use numpy::{ndarray::prelude::*, PyArray1};
 use pyo3::prelude::*;
-use std::collections::BinaryHeap;
+// use std::collections::BinaryHeap;
 
 use crate::common::get_cow_slice;
 pub fn find_extrema_pos_impl(val: &[f64]) -> (Vec<usize>, Vec<usize>) {
@@ -18,9 +18,13 @@ pub fn find_extrema_pos_impl(val: &[f64]) -> (Vec<usize>, Vec<usize>) {
         level.push(0);
         cur_level = Some(0);
     }
-    for i in 0..n - 2 {
-        let d1 = val[i + 2] - val[i + 1];
-        let d2 = val[i + 1] - val[i];
+
+    for (i, window) in val.windows(3).enumerate() {
+        let (prev, curr, next) = (window[0], window[1], window[2]);
+        let d2 = curr - prev;
+        let d1 = next - curr;
+        let d1_pos = d1 > 0.0;
+        let d2_pos = d2 > 0.0;
         if d1 == 0.0 {
             if cur_level.is_none() {
                 level.push(i + 1);
@@ -32,13 +36,12 @@ pub fn find_extrema_pos_impl(val: &[f64]) -> (Vec<usize>, Vec<usize>) {
                 cur_level = None;
             }
 
-            if d2 != 0.0 && (d1 > 0.0) != (d2 > 0.0) {
+            if d2 != 0.0 && d1_pos ^ d2_pos {
                 // if d2 != 0.0 && d1.signum() != d2.signum() {
-                if d2 < 0.0 {
-                    minout.push(i + 1);
-                }
-                if d2 > 0.0 {
+                if d2_pos {
                     maxout.push(i + 1);
+                } else {
+                    minout.push(i + 1);
                 }
             }
         }
@@ -56,8 +59,8 @@ pub fn find_extrema_pos_impl(val: &[f64]) -> (Vec<usize>, Vec<usize>) {
     }
     // We need to do a second pass
     // It may be faster to append to the vectors then sort again. We can test this later!
-    let mut minout = BinaryHeap::from(minout);
-    let mut maxout = BinaryHeap::from(maxout);
+    // let mut minout = BinaryHeap::from(minout);
+    // let mut maxout = BinaryHeap::from(maxout);
     for (start, end) in level.iter().copied().zip(level_ends) {
         if start == 1 {
             continue;
@@ -68,15 +71,18 @@ pub fn find_extrema_pos_impl(val: &[f64]) -> (Vec<usize>, Vec<usize>) {
             val[start] - val[start - 1]
         };
         let out_slope = val[end + 1] - val[end - 1];
-        if in_slope > 0.0 && out_slope < 0.0 {
-            maxout.push(midpoint(start, end));
-        } else if in_slope < 0.0 && out_slope > 0.0 {
-            minout.push(midpoint(start, end))
+        match (in_slope > 0.0, out_slope < 0.0) {
+            (true, true) => maxout.push(midpoint(start, end)),
+            (false, false) if in_slope < 0.0 => minout.push(midpoint(start, end)),
+            _ => {}
         }
     }
-    (minout.into_sorted_vec(), maxout.into_sorted_vec())
+    minout.sort_unstable();
+    maxout.sort_unstable();
+    (minout, maxout)
+    // (minout.into_sorted_vec(), maxout.into_sorted_vec())
 }
-fn find_zero_crossing_impl(val: &[f64]) -> Vec<usize> {
+pub fn find_zero_crossing_impl(val: &[f64]) -> Vec<usize> {
     let n = val.len();
     if n == 0 {
         return Vec::new();
@@ -91,17 +97,20 @@ fn find_zero_crossing_impl(val: &[f64]) -> Vec<usize> {
 
     let mut out = Vec::new();
     let mut debz = if val[0] == 0.0 { Some(0) } else { None };
-    for i in 0..n - 1 {
-        if val[i + 1] == 0.0 {
-            if val[i] != 0.0 {
-                debz = Some(i + 1);
+    for (i, window) in val.windows(2).enumerate() {
+        let (curr, next) = (window[0], window[1]);
+        let curr_is_zero = curr == 0.0;
+        let next_is_zero = next == 0.0;
+        match (curr_is_zero, next_is_zero) {
+            (false, true) => debz = Some(i + 1),
+            (true, false) => {
+                out.push(midpoint(i, debz.unwrap()));
+                debz = None;
             }
-        } else if val[i] == 0.0 {
-            out.push(midpoint(i, debz.unwrap()));
-            debz = None;
-        } else if (val[i + 1] > 0.0) != (val[i] > 0.0) {
-            // } else if val[i + 1].signum() != val[i].signum() {
-            out.push(i)
+            (false, false) if (curr > 0.0) ^ (next > 0.0) => {
+                out.push(i);
+            }
+            _ => {}
         }
     }
     if let Some(debz) = debz {
@@ -119,13 +128,20 @@ const fn midpoint(a: usize, b: usize) -> usize {
         _ => unreachable!(),
     }
 }
+pub fn fill_by_index<T: Copy>(pos: &[usize], val: &[T]) -> Vec<T> {
+    let mut max_val = Vec::with_capacity(pos.len());
+    pos.iter().for_each(|j| max_val.push(val[*j]));
+    max_val
+}
 pub fn find_extrema_simple_impl(val: ArrayView1<f64>) -> FindExtremaOutput {
     let val_slice = get_cow_slice(&val);
     let zc = find_zero_crossing_impl(&val_slice);
     let (minpos, maxpos) = find_extrema_pos_impl(&val_slice);
+    let max_val = fill_by_index(&maxpos, &val_slice);
+    let min_val = fill_by_index(&minpos, &val_slice);
     FindExtremaOutput {
-        max_val: maxpos.iter().map(|i| val[*i]).collect(),
-        min_val: minpos.iter().map(|i| val[*i]).collect(),
+        max_val,
+        min_val,
         max_pos: maxpos,
         min_pos: minpos,
         zc_ind: zc,
