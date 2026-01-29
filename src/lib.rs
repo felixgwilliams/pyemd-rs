@@ -88,7 +88,10 @@ type PyEMDOut<'py> = (Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<f64>>);
 #[pyo3(signature = (
     val,
     max_imf=None,
+    imf_check=true,
     max_iteration=1000,
+    *,
+    s_number=0,
     svar_thresh=0.001,
     energy_ratio_thresh=0.2,
     std_thresh=0.2,
@@ -99,7 +102,9 @@ fn emd<'py>(
     py: Python<'py>,
     val: PyReadonlyArray1<'py, f64>,
     max_imf: Option<usize>,
+    imf_check: bool,
     max_iteration: usize,
+    s_number: i32,
     svar_thresh: f64,
     energy_ratio_thresh: f64,
     std_thresh: f64,
@@ -110,6 +115,8 @@ fn emd<'py>(
 
     let (imfs, resid) = py.detach(|| {
         let emd_opts = EmdOpts {
+            imf_check,
+            s_number,
             max_iteration,
             svar_thresh,
             energy_ratio_thresh,
@@ -141,7 +148,9 @@ fn normal_mt(
     max_imf=None,
     seed=None,
     epsilon=0.005,
+    imf_check=true,
     *,
+    s_number=0,
     parallel=true,
     noise_scale=1.0,
     c_range_thresh=0.01,
@@ -161,6 +170,8 @@ fn ceemdan<'py>(
     max_imf: Option<usize>,
     seed: Option<u32>,
     epsilon: f64,
+    imf_check: bool,
+    s_number: i32,
     parallel: bool,
     noise_scale: f64,
     c_range_thresh: f64,
@@ -178,6 +189,8 @@ fn ceemdan<'py>(
     // py.detach(|| ceemdan_impl(val, max_imf));
     let (imfs, resid) = py.detach(|| {
         let emd_opts = EmdOpts {
+            imf_check,
+            s_number,
             max_iteration,
             svar_thresh,
             energy_ratio_thresh,

@@ -37,6 +37,9 @@ def normal_mt(seed: int | None, size: int, scale: float) -> npt.NDArray[np.float
 def emd(
     val: npt.NDArray[np.float64],
     max_imf: int | None = None,
+    imf_check: bool = True,
+    *,
+    s_number: int = 0,
     max_iteration: int = 1000,
     svar_thresh: float = 0.001,
     energy_ratio_thresh: float = 0.2,
@@ -50,6 +53,10 @@ def emd(
         val (npt.NDArray[np.float64]): Array to calculate IMFs
         max_imf (int | None, optional): maximum number of IMFs including the residual.
             Defaults to None.
+        imf_check (bool, optional): Whether to check the IMF condition and stopping criteria to
+            terminate sifting. If False, rely on max_iteration. Defaults to True
+        s_number (int, optional): Number of siftings to perform before performing IMF checks
+            and stopping criteria. Defaults to 0.
         max_iteration (int, optional): Maximum number of iterations for EMD. Defaults to 1000
         svar_thresh (float, optional): Variance threshold for EMD. Defaults to 0.001
         energy_ratio_thresh (float, optional): Energy ratio threshold for EMD. Defaults to 0.2
@@ -68,7 +75,9 @@ def ceemdan(
     max_imf: int | None = None,
     seed: int | None = None,
     epsilon: float = 0.005,
+    imf_check: bool = True,
     *,
+    s_number: int = 0,
     parallel: bool = True,
     noise_scale: float = 1.0,
     c_range_thresh: float = 0.01,
@@ -91,6 +100,10 @@ def ceemdan(
         seed (int | None, optional): Random seed for generating the noise. If not given, a seed
             will be generated using the getrandom crate. Defaults to None.
         epsilon (float, optional): Scale for random noise added to input. Defaults to 0.005
+        imf_check (bool, optional): Whether to check the IMF condition and stopping criteria to
+            terminate sifting. If False, rely on max_iteration. Defaults to True
+        s_number (int, optional): Number of siftings to perform before performing IMF checks
+            and stopping criteria. Defaults to 0.
         parallel (bool, optional): Whether to use rayon for parallelising code. Defaults to True
         noise_scale (float, optional): Scale for random noise added to input. Defaults to 1.0
         c_range_thresh (float, optional): Range threshold for CEEMDAN. Defaults to 0.01
@@ -113,6 +126,8 @@ class EmdOptsDict(TypedDict):
     """EMD Options as a dict.
 
     Attributes:
+        imf_check (bool, optional): Whether to check the IMF condition to terminate sifting.
+            If False,rely on max_iteration. Defaults to True
         max_iteration (int, optional): Maximum number of iterations for EMD. Defaults to 1000
         svar_thresh (float, optional): Variance threshold for EMD. Defaults to 0.001
         energy_ratio_thresh (float, optional): Energy ratio threshold for EMD. Defaults to 0.2
@@ -121,6 +136,7 @@ class EmdOptsDict(TypedDict):
         total_power_thresh (float, optional): Total power threshold for EMD. Defaults to 0.05
     """
 
+    imf_check: bool
     max_iteration: int
     svar_thresh: float
     energy_ratio_thresh: float

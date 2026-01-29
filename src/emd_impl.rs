@@ -97,25 +97,17 @@ pub fn emd_impl(val: ArrayView1<f64>, max_imf: Option<usize>, emd_opts: &EmdOpts
 
                 let extremas2 = find_extrema_simple_impl(imf_view);
                 let extremas_lengths2 = extremas2.get_lengths();
-                if true {
-                    // TODO: s_number active
-                    if true {
-                        //  TODO:check extrema diff
+                if emd_opts.imf_check {
+                    if extremas_lengths2.diff(&extremas_lengths) <= 1 {
                         s_counter += 1;
-                        if s_counter >= 0 //  TODO:replace with proper s_number check
-                            && extremas_lengths2.imf_condition()
-                            && check_imf(
-                                imf_view,
-                                imf_old.view(),
-                                zmin.view(),
-                                zmax.view(),
-                                emd_opts,
-                            )
-                        {
-                            break 'cur_imf;
-                        }
                     } else {
                         s_counter = 0;
+                    }
+                    if s_counter >= emd_opts.s_number
+                        && extremas_lengths2.imf_condition()
+                        && check_imf(imf_view, imf_old.view(), zmin.view(), zmax.view(), emd_opts)
+                    {
+                        break 'cur_imf;
                     }
                 }
             } else {

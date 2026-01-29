@@ -14,8 +14,11 @@ pub const NOISE_SCALE: f64 = 1.0;
 pub const C_RANGE_THRESH: f64 = 0.01;
 pub const C_TOTAL_POWER_THRESH: f64 = 0.05;
 pub const C_MAX_IMF: usize = 100;
+pub const S_NUMBER: i32 = 0;
 #[derive(Debug, Clone, IntoPyObject)]
 pub(crate) struct EmdOpts {
+    pub imf_check: bool,
+    pub s_number: i32,
     pub max_iteration: usize,
     pub svar_thresh: f64,
     pub energy_ratio_thresh: f64,
@@ -26,6 +29,8 @@ pub(crate) struct EmdOpts {
 impl Default for EmdOpts {
     fn default() -> Self {
         Self {
+            imf_check: true,
+            s_number: S_NUMBER,
             max_iteration: MAX_ITERATION,
             svar_thresh: SVAR_THRESH,
             energy_ratio_thresh: ENERGY_RATIO_THRESH,

@@ -196,6 +196,11 @@ impl ExtremaLengths {
         let ext_no = self.num_extrema();
         ext_no.abs_diff(self.num_zc) < 2
     }
+    pub fn diff(&self, other: &Self) -> usize {
+        self.num_max.abs_diff(other.num_max)
+            + self.num_min.abs_diff(other.num_min)
+            + self.num_zc.abs_diff(other.num_zc)
+    }
 }
 #[cfg(test)]
 mod test {
